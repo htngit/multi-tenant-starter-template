@@ -1,7 +1,6 @@
 'use client';
 
 import SidebarLayout, { SidebarItem } from "@/components/sidebar-layout";
-import { SelectedTeamSwitcher, useUser } from "@stackframe/stack";
 import { BadgePercent, BarChart4, Columns3, Globe, Locate, Settings2, ShoppingBag, ShoppingCart, Users } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 
@@ -76,26 +75,16 @@ const navigationItems: SidebarItem[] = [
 
 export default function Layout(props: { children: React.ReactNode }) {
   const params = useParams<{ teamId: string }>();
-  const user = useUser({ or: 'redirect' });
-  const team = user.useTeam(params.teamId);
-  const router = useRouter();
-
-  if (!team) {
-    router.push('/dashboard');
-    return null;
-  }
-
+  // TODO: Replace Stack Auth team logic with Supabase
+  // For now, returning children directly
   return (
     <SidebarLayout 
       items={navigationItems}
-      basePath={`/dashboard/${team.id}`}
-      sidebarTop={<SelectedTeamSwitcher 
-        selectedTeam={team}
-        urlMap={(team) => `/dashboard/${team.id}`}
-      />}
+      basePath={`/dashboard/${params.teamId}`}
+      sidebarTop={<div>Team Switcher Placeholder</div>}
       baseBreadcrumb={[{
-        title: team.displayName,
-        href: `/dashboard/${team.id}`,
+        title: params.teamId,
+        href: `/dashboard/${params.teamId}`,
       }]}
     >
       {props.children}

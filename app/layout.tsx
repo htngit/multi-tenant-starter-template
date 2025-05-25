@@ -1,15 +1,14 @@
-import { StackProvider, StackTheme } from "@stackframe/stack";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { stackServerApp } from "../stack";
 import "./globals.css";
 import { Provider } from "./provider";
+import { AuthProvider } from "@/components/AuthContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Stack Template",
-  description: "A Multi-tenant Next.js Starter Template",
+  title: "XalesIn CRM",
+  description: "Solusi CRM modern untuk mengelola pelanggan dan tim penjualan Anda secara efisien, didukung oleh teknologi terkini.",
 };
 
 export default function RootLayout({
@@ -21,9 +20,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <Provider>
-          <StackProvider app={stackServerApp}>
-            <StackTheme>{children}</StackTheme>
-          </StackProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </Provider>
       </body>
     </html>
