@@ -14,8 +14,17 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { createBrowserClient, createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+
+// Conditional import for next/headers (only available in app directory)
+let cookies: any = null
+try {
+  // This will only work in app directory Server Components
+  cookies = require('next/headers').cookies
+} catch (error) {
+  // Fallback for pages directory or client-side
+  cookies = null
+}
 
 // Environment variables validation
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -56,22 +65,35 @@ export const createClientComponentClient = () => {
  * Uses service role key for elevated permissions when needed
  * 
  * Usage: Use this in API routes, server actions, and server components
+ * Note: Falls back to browser client when cookies are not available (pages directory)
  */
 export const createServerComponentClient = () => {
-  const cookieStore = cookies()
+  // Check if cookies are available (app directory)
+  if (cookies) {
+    const cookieStore = cookies()
+    
+    return createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          cookieStore.set({ name, value, ...options })
+        },
+        remove(name: string, options: any) {
+          cookieStore.set({ name, value: '', ...options })
+        },
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    })
+  }
   
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value
-      },
-      set(name: string, value: string, options: any) {
-        cookieStore.set({ name, value, ...options })
-      },
-      remove(name: string, options: any) {
-        cookieStore.set({ name, value: '', ...options })
-      },
-    },
+  // Fallback to browser client for pages directory
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
