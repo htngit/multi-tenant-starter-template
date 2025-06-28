@@ -22,8 +22,8 @@ import { financialRouter } from './routers/financial'
 import { reportsRouter } from './routers/reports'
 import { adminRouter } from './routers/admin'
 import { tenantRouter } from './routers/tenant'
-import { userRouter } from './routers/user'
-import { permissionRouter } from './routers/permission'
+import { usersRouter } from './routers/users'
+import { permissionsRouter } from './routers/permissions'
 
 /**
  * Main application router
@@ -36,13 +36,13 @@ export const appRouter = createTRPCRouter({
   auth: authRouter,
   
   // User management
-  user: userRouter,
+  users: usersRouter,
   
   // Tenant/organization management
   tenant: tenantRouter,
   
   // Permission and role management
-  permission: permissionRouter,
+  permissions: permissionsRouter,
   
   // Core business modules
   inventory: inventoryRouter,
