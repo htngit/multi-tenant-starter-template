@@ -91,8 +91,8 @@ export async function middleware(request: NextRequest) {
   )
 
   try {
-    // Get user from Stack Auth
-    const user = await stackServerApp.getUser()
+    // Get user from Stack Auth with request context
+    const user = await stackServerApp.getUser({ request })
     
     // Handle unauthenticated users
     if (!user) {
