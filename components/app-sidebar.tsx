@@ -187,10 +187,25 @@ const navigationSections: NavigationSection[] = [
         href: "/parties/suppliers",
         icon: Truck,
       },
+    ],
+  },
+  {
+    title: "Team Management",
+    items: [
       {
         title: "Employees",
         href: "/parties/employees",
         icon: UserCheck,
+      },
+      {
+        title: "Custom Right Access",
+        href: "/team/custom-right-access",
+        icon: Lock,
+      },
+      {
+        title: "Right Access Default",
+        href: "/team/right-access-default",
+        icon: Shield,
       },
     ],
   },
@@ -327,7 +342,7 @@ export function AppSidebar({ teamId, teamName }: AppSidebarProps) {
           </div>
           <div className="grid flex-1 text-left text-sm leading-tight">
             <span className="truncate font-semibold">ERP XalesIn</span>
-            <span className="truncate text-xs">Team: {teamId}</span>
+            <span className="truncate text-xs">{teamName}</span>
           </div>
         </div>
       </SidebarHeader>

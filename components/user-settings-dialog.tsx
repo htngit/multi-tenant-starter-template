@@ -64,38 +64,11 @@ export function UserSettingsDialog({ children }: UserSettingsDialogProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const supabase = createClientComponentClient()
   
-  // Debug Supabase configuration on component mount
+  // Environment validation on component mount
   useEffect(() => {
-    console.log('🔍 Debugging Supabase Configuration:')
-    console.log('Environment Variables:', {
-      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Set' : '❌ Missing',
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing',
-      supabaseUrlValue: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      anonKeyLength: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length || 0
-    })
-    
-    console.log('Supabase Client:', {
-      hasSupabaseClient: !!supabase,
-      hasStorageMethod: !!supabase?.storage,
-      clientType: supabase?.constructor?.name || 'Unknown'
-    })
-    
-    // Test basic Supabase connectivity
-    const testConnection = async () => {
-      try {
-        console.log('🧪 Testing Supabase connection...')
-        const { data, error } = await supabase.storage.listBuckets()
-        if (error) {
-          console.error('❌ Connection test failed:', error)
-        } else {
-          console.log('✅ Connection test successful. Buckets:', data?.map(b => b.name))
-        }
-      } catch (err) {
-        console.error('💥 Connection test error:', err)
-      }
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error('Missing Supabase environment variables')
     }
-    
-    testConnection()
   }, [])
 
   // State untuk form data
@@ -165,60 +138,20 @@ export function UserSettingsDialog({ children }: UserSettingsDialogProps) {
    * Handle avatar upload to Supabase Storage and update Stack Auth metadata
    */
   const handleAvatarUpload = async (file: File) => {
-    console.log('🚀 Starting avatar upload process...')
-    console.log('📁 File details:', {
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      lastModified: file.lastModified
-    })
-    
     if (!user?.id) {
-      console.error('❌ No user ID found')
       toast.error('User tidak ditemukan. Silakan login ulang.')
       return
     }
-    
-    console.log('👤 User context:', {
-      userId: user.id,
-      email: user.primaryEmail,
-      hasClientMetadata: !!user.clientMetadata
-    })
 
     setIsUploadingAvatar(true)
     try {
       // Generate unique filename
       const fileExt = file.name.split('.').pop()
       const fileName = `${user.id}-${Date.now()}.${fileExt}`
+      // Use avatars folder - RLS policies now allow uploads to user-avatars bucket
       const filePath = `avatars/${fileName}`
       
-      console.log('📝 Generated file path:', filePath)
-      console.log('🔧 Supabase client status:', {
-        hasSupabase: !!supabase,
-        hasStorage: !!supabase?.storage
-      })
-
-      // Check if bucket exists and is accessible
-      console.log('🪣 Checking bucket access...')
-      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
-      
-      if (bucketError) {
-        console.error('❌ Bucket list error:', bucketError)
-        throw new Error(`Bucket access error: ${bucketError.message}`)
-      }
-      
-      console.log('📋 Available buckets:', buckets?.map(b => b.name))
-      const userAvatarsBucket = buckets?.find(b => b.name === 'user-avatars')
-      
-      if (!userAvatarsBucket) {
-        console.error('❌ user-avatars bucket not found')
-        throw new Error('Storage bucket tidak ditemukan. Silakan hubungi administrator.')
-      }
-      
-      console.log('✅ Bucket found:', userAvatarsBucket)
-
       // Upload to Supabase Storage
-      console.log('⬆️ Starting file upload...')
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('user-avatars')
         .upload(filePath, file, {
@@ -226,72 +159,40 @@ export function UserSettingsDialog({ children }: UserSettingsDialogProps) {
           upsert: true
         })
 
-      console.log('📤 Upload result:', { uploadData, uploadError })
-
       if (uploadError) {
-        console.error('❌ Upload error details:', {
-          message: uploadError.message,
-          statusCode: uploadError.statusCode,
-          error: uploadError.error
-        })
         throw uploadError
       }
 
-      console.log('✅ File uploaded successfully:', uploadData)
-
       // Get public URL
-      console.log('🔗 Getting public URL...')
       const { data: { publicUrl } } = supabase.storage
         .from('user-avatars')
         .getPublicUrl(filePath)
-        
-      console.log('🌐 Public URL generated:', publicUrl)
 
       // Update Stack Auth user metadata
-      console.log('👤 Updating Stack Auth metadata...')
-      const metadataUpdate = {
+      await user.update({
         clientMetadata: {
           ...user.clientMetadata,
           avatarUrl: publicUrl,
           avatarStoragePath: filePath,
           avatarUpdatedAt: new Date().toISOString()
         }
-      }
+      })
       
-      console.log('📝 Metadata to update:', metadataUpdate)
-      
-      await user.update(metadataUpdate)
-      
-      console.log('✅ Stack Auth metadata updated successfully')
-
       toast.success('Avatar berhasil diperbarui!')
       setAvatarPreview(null)
     } catch (error: any) {
-      console.error('💥 Avatar upload error occurred:')
-      console.error('Error type:', typeof error)
-      console.error('Error constructor:', error?.constructor?.name)
-      console.error('Error message:', error?.message)
-      console.error('Error stack:', error?.stack)
-      console.error('Full error object:', error)
+      console.error('Avatar upload failed:', error)
       
-      // More specific error handling
-      let errorMessage = 'Gagal mengupload avatar. Silakan coba lagi.'
-      
-      if (error?.message?.includes('bucket')) {
-        errorMessage = 'Storage bucket tidak tersedia. Silakan hubungi administrator.'
-      } else if (error?.message?.includes('permission') || error?.message?.includes('unauthorized')) {
-        errorMessage = 'Tidak memiliki izin untuk mengupload. Silakan login ulang.'
-      } else if (error?.message?.includes('size') || error?.message?.includes('too large')) {
-        errorMessage = 'File terlalu besar. Maksimal 2MB.'
-      } else if (error?.message?.includes('format') || error?.message?.includes('type')) {
-        errorMessage = 'Format file tidak didukung. Gunakan JPG, PNG, atau GIF.'
-      } else if (error?.statusCode === 413) {
-        errorMessage = 'File terlalu besar. Maksimal 2MB.'
-      } else if (error?.statusCode === 401 || error?.statusCode === 403) {
-        errorMessage = 'Tidak memiliki izin akses. Silakan login ulang.'
+      // Handle specific error types
+      if (error?.message?.includes('new row violates row-level security policy')) {
+        toast.error('Tidak memiliki izin untuk mengupload avatar. Silakan hubungi administrator.')
+      } else if (error?.message?.includes('Storage bucket tidak ditemukan')) {
+        toast.error('Storage bucket tidak ditemukan. Silakan hubungi administrator.')
+      } else if (error?.message?.includes('signature verification failed')) {
+        toast.error('Konfigurasi autentikasi tidak valid. Silakan hubungi administrator.')
+      } else {
+        toast.error('Gagal mengupload avatar. Silakan coba lagi.')
       }
-      
-      toast.error(errorMessage)
       setAvatarPreview(null)
     } finally {
       setIsUploadingAvatar(false)
@@ -299,7 +200,6 @@ export function UserSettingsDialog({ children }: UserSettingsDialogProps) {
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
-      console.log('🏁 Avatar upload process completed')
     }
   }
 
