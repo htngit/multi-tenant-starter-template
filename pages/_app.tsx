@@ -26,7 +26,7 @@ import { useState } from 'react'
 
 import { api } from '../lib/api'
 import { env } from '../env.mjs'
-import '../styles/globals.css'
+import '../app/globals.css'
 
 // Import Stack Auth provider (when available)
 // import { StackProvider } from '@stackframe/stack'

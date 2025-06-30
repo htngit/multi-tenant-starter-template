@@ -14,6 +14,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMiddlewareClient } from './lib/supabase'
 import { stackServerApp } from './lib/stack-auth'
+import { authMonitor } from '@/lib/auth-monitoring'
+
+/**
+ * Fallback authentication function for graceful error handling
+ */
+async function getUserWithFallback(request: NextRequest): Promise<any> {
+  try {
+    return await stackServerApp.getUser({ request })
+  } catch (error: any) {
+    // Log error with monitoring utility
+    authMonitor.logAuthError(error, request, request.nextUrl.pathname)
+    
+    console.warn('🔄 Stack Auth fallback triggered:', {
+      error: error.message,
+      timestamp: new Date().toISOString(),
+      hasTokenErrorPattern: authMonitor.hasTokenErrorPattern()
+    })
+    
+    // Return null for token-related errors to trigger sign-in flow
+    if (error.message?.includes('accessToken') || error.message?.includes('token')) {
+      // Log recommendations if there's a pattern
+      if (authMonitor.hasTokenErrorPattern()) {
+        console.warn('🔍 [AUTH-MONITOR] Recommendations:', authMonitor.getRecommendations())
+      }
+      return null
+    }
+    
+    // Re-throw other errors
+    throw error
+  }
+}
 
 /**
  * Protected routes that require authentication
@@ -91,8 +122,69 @@ export async function middleware(request: NextRequest) {
   )
 
   try {
-    // Get user from Stack Auth with request context
-    const user = await stackServerApp.getUser({ request })
+    // Debug logging for Stack Auth request context
+    console.log('🔍 Middleware Debug - Request Analysis:', {
+      pathname,
+      method: request.method,
+      hasAuthHeader: !!request.headers.get('authorization'),
+      hasCookies: !!request.headers.get('cookie'),
+      userAgent: request.headers.get('user-agent')?.substring(0, 50),
+      timestamp: new Date().toISOString()
+    })
+
+    // Debug Stack Auth environment variables
+    console.log('🔍 Stack Auth Config Check:', {
+      hasProjectId: !!process.env.NEXT_PUBLIC_STACK_PROJECT_ID,
+      hasPublishableKey: !!process.env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY,
+      hasSecretKey: !!process.env.STACK_SECRET_SERVER_KEY,
+      stackApiUrl: process.env.NEXT_PUBLIC_STACK_API_URL || 'default'
+    })
+
+    // Debug request object structure before Stack Auth call
+    console.log('🔍 Request Object Debug:', {
+      requestType: typeof request,
+      hasNextUrl: !!request.nextUrl,
+      hasHeaders: !!request.headers,
+      hasCookies: !!request.cookies,
+      requestKeys: Object.keys(request)
+    })
+
+    // Enhanced Stack Auth validation with fallback handling
+    console.log('🔍 Calling Stack Auth with fallback...')
+    let user: any = null
+    
+    // Validate request object structure for Stack Auth
+    if (!request || typeof request !== 'object') {
+      console.warn('⚠️ Invalid request object for Stack Auth');
+      if (isProtectedRoute) {
+        const loginUrl = new URL('/auth/sign-in', request.url)
+        loginUrl.searchParams.set('redirect', pathname)
+        return NextResponse.redirect(loginUrl)
+      }
+      return response
+    }
+
+    // Check for required request properties
+    if (!request.headers || !request.cookies) {
+      console.warn('⚠️ Missing required request properties');
+      if (isProtectedRoute) {
+        const loginUrl = new URL('/auth/sign-in', request.url)
+        loginUrl.searchParams.set('redirect', pathname)
+        return NextResponse.redirect(loginUrl)
+      }
+      return response
+    }
+    
+    // Use fallback authentication with enhanced error handling
+    user = await getUserWithFallback(request)
+    
+    console.log('🔍 Stack Auth Result:', {
+      hasUser: !!user,
+      userType: typeof user,
+      userKeys: user ? Object.keys(user) : null,
+      userId: user?.id,
+      hasSelectedTeam: !!user?.selectedTeam
+    })
     
     // Handle unauthenticated users
     if (!user) {
@@ -158,13 +250,71 @@ export async function middleware(request: NextRequest) {
 
     return modifiedResponse
 
-  } catch (error) {
-    console.error('Middleware error:', error)
+  } catch (error: any) {
+    console.error('🚨 Middleware Error - Complete Analysis:', {
+      errorMessage: error?.message,
+      errorName: error?.name,
+      errorStack: error?.stack,
+      errorCause: error?.cause,
+      pathname,
+      method: request.method,
+      timestamp: new Date().toISOString(),
+      requestInfo: {
+        hasAuthHeader: !!request.headers.get('authorization'),
+        hasCookies: !!request.headers.get('cookie'),
+        cookieNames: request.cookies.getAll().map(c => c.name),
+        userAgent: request.headers.get('user-agent')?.substring(0, 100)
+      },
+      environmentCheck: {
+        nodeEnv: process.env.NODE_ENV,
+        hasStackProjectId: !!process.env.NEXT_PUBLIC_STACK_PROJECT_ID,
+        hasStackSecretKey: !!process.env.STACK_SECRET_SERVER_KEY,
+        hasStackPublishableKey: !!process.env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY,
+        stackApiUrl: process.env.NEXT_PUBLIC_STACK_API_URL
+      },
+      isAccessTokenError: error?.message?.includes('accessToken'),
+      isStackAuthError: error?.name?.includes('Stack') || error?.message?.includes('stack-auth')
+    })
+    
+    // Enhanced error handling for Stack Auth token issues
+    if (error?.message?.includes('accessToken') || error?.message?.includes('token')) {
+      console.error('🚨 Critical Stack Auth Token Error - Emergency Recovery:', {
+        error: error.message,
+        action: 'clearing_all_auth_state_and_redirecting'
+      })
+      
+      // Clear all authentication state and redirect to sign-in
+      const signInUrl = new URL('/auth/sign-in', request.url)
+      if (!pathname.startsWith('/auth/') && !isPublicRoute) {
+        signInUrl.searchParams.set('redirect', pathname)
+        signInUrl.searchParams.set('error', 'token_error')
+      }
+      
+      const response = NextResponse.redirect(signInUrl)
+      
+      // Clear all potentially corrupted auth cookies
+      const cookies = request.cookies.getAll()
+      cookies.forEach(cookie => {
+        if (cookie.name.startsWith('stack-') || 
+            cookie.name.includes('auth') || 
+            cookie.name.includes('session')) {
+          response.cookies.delete(cookie.name)
+        }
+      })
+      
+      return response
+    }
     
     // For API routes, return error response
     if (pathname.startsWith('/api/')) {
       return NextResponse.json(
-        { error: 'Internal server error' },
+        { 
+          error: 'Internal server error',
+          details: process.env.NODE_ENV === 'development' ? {
+            message: error?.message,
+            type: error?.name
+          } : undefined
+        },
         { status: 500 }
       )
     }

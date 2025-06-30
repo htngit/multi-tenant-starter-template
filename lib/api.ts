@@ -105,8 +105,8 @@ export const api = createTRPCNext<AppRouter>({
           queries: {
             // Stale time: 5 minutes
             staleTime: 5 * 60 * 1000,
-            // Cache time: 10 minutes
-            cacheTime: 10 * 60 * 1000,
+            // Garbage collection time: 10 minutes (renamed from cacheTime in React Query v5)
+            gcTime: 10 * 60 * 1000,
             // Retry failed requests 3 times
             retry: 3,
             // Retry delay with exponential backoff

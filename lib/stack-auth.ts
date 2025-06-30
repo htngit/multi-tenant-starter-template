@@ -48,12 +48,25 @@ export const stackClientApp = new StackClientApp({
  * Server-side Stack Auth configuration
  * Use this in API routes, server actions, and server components
  */
+console.log('🔍 Initializing Stack Server App with config:', {
+  hasProjectId: !!stackProjectId,
+  projectIdLength: stackProjectId?.length,
+  hasPublishableKey: !!stackPublishableClientKey,
+  publishableKeyLength: stackPublishableClientKey?.length,
+  hasSecretKey: !!stackSecretServerKey,
+  secretKeyLength: stackSecretServerKey?.length,
+  baseUrl: stackApiUrl,
+  timestamp: new Date().toISOString()
+})
+
 export const stackServerApp = new StackServerApp({
   projectId: stackProjectId,
   publishableClientKey: stackPublishableClientKey,
   secretServerKey: stackSecretServerKey,
   baseUrl: stackApiUrl,
 })
+
+console.log('✅ Stack Server App initialized successfully')
 
 /**
  * User context type definition

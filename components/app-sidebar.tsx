@@ -31,6 +31,7 @@ import {
   TrendingUp,
   Lock,
   Cog,
+  ChevronUp,
 } from "lucide-react"
 
 import {
@@ -56,6 +57,8 @@ import {
 } from "@/components/ui/collapsible"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { useUser } from "@stackframe/stack"
+import { UserSettingsDialog } from "@/components/user-settings-dialog"
 
 interface NavigationItem {
   title: string
@@ -240,6 +243,23 @@ interface AppSidebarProps {
 
 export function AppSidebar({ teamId, teamName }: AppSidebarProps) {
   const pathname = usePathname()
+  const user = useUser()
+  
+  // Helper function untuk mendapatkan inisial user
+  const getUserInitials = () => {
+    if (!user?.displayName) return "U"
+    return user.displayName
+      .split(" ")
+      .map(name => name.charAt(0))
+      .join("")
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  // Get avatar URL from Stack Auth metadata or fallback to profileImageUrl
+  const getAvatarUrl = () => {
+    return user?.clientMetadata?.avatarUrl || user?.profileImageUrl || ''
+  }
 
   const isActive = (href: string) => {
     if (href === `/dashboard/${teamId}`) {
@@ -328,20 +348,28 @@ export function AppSidebar({ teamId, teamName }: AppSidebarProps) {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src="/avatars/shadcn.jpg" alt="User" />
-                <AvatarFallback className="rounded-lg">CN</AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">Admin User</span>
-                <span className="truncate text-xs">admin@xalesin.com</span>
-              </div>
-              <Cog className="ml-auto size-4" />
-            </SidebarMenuButton>
+            <UserSettingsDialog>
+              <SidebarMenuButton className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarImage
+                    src={getAvatarUrl()}
+                    alt={user?.displayName || "User"}
+                  />
+                  <AvatarFallback className="rounded-lg">
+                    {getUserInitials()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">
+                    {user?.displayName || "User"}
+                  </span>
+                  <span className="truncate text-xs">
+                    {user?.primaryEmail || "user@example.com"}
+                  </span>
+                </div>
+                <ChevronUp className="ml-auto size-4" />
+              </SidebarMenuButton>
+            </UserSettingsDialog>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
