@@ -131,7 +131,7 @@ export const api = createTRPCNext<AppRouter>({
    * Whether tRPC should await queries when server rendering pages
    */
   ssr: false,
-  transformer: undefined
+  transformer: superjson
 })
 
 /**
