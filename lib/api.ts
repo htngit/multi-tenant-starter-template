@@ -53,38 +53,37 @@ export const api = createTRPCNext<AppRouter>({
       links: [
         // Logger link for development
         loggerLink({
-          enabled: (opts) =>
-            env.NODE_ENV === 'development' ||
+          enabled: (opts) => env.NODE_ENV === 'development' ||
             (opts.direction === 'down' && opts.result instanceof Error),
         }),
-        
+
         // HTTP batch link for efficient request batching
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
-          
+
           /**
            * Transformer used for data de-serialization from the server
            */
           transformer: superjson,
-          
+
           /**
            * Headers to be sent with every request
            */
           headers() {
             const headers = new Map<string, string>()
-            
+
             // Add common headers
             headers.set('x-trpc-source', 'react')
-            
+
             // Add user agent for server-side requests
             if (typeof window === 'undefined') {
               headers.set('user-agent', 'XalesIn-ERP/1.0.0')
             }
-            
-            
+
+
             return Object.fromEntries(headers)
           },
-          
+
           /**
            * Request timeout in milliseconds
            */
@@ -97,7 +96,7 @@ export const api = createTRPCNext<AppRouter>({
           },
         }),
       ],
-      
+
       /**
        * React Query options
        */
@@ -127,11 +126,12 @@ export const api = createTRPCNext<AppRouter>({
       },
     }
   },
-  
+
   /**
    * Whether tRPC should await queries when server rendering pages
    */
   ssr: false,
+  transformer: undefined
 })
 
 /**
