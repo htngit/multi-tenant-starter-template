@@ -19,7 +19,7 @@ import { createTRPCNext } from '@trpc/next'
 import { createTRPCProxyClient, httpBatchLink, loggerLink } from '@trpc/client'
 import { type inferRouterInputs, type inferRouterOutputs } from '@trpc/server'
 import superjson from 'superjson'
-import { type AppRouter } from '../server/api/root'
+import { type AppRouter, appRouter } from '../server/api/root'
 import { env } from '../env.mjs'
 
 /**
@@ -48,11 +48,6 @@ export const api = createTRPCNext<AppRouter>({
   config() {
     return {
       /**
-       * Transformer used for data de-serialization from the server
-       */
-      transformer: superjson,
-      
-      /**
        * Links used to determine request flow from client to server
        */
       links: [
@@ -68,6 +63,11 @@ export const api = createTRPCNext<AppRouter>({
           url: `${getBaseUrl()}/api/trpc`,
           
           /**
+           * Transformer used for data de-serialization from the server
+           */
+          transformer: superjson,
+          
+          /**
            * Headers to be sent with every request
            */
           headers() {
@@ -80,6 +80,7 @@ export const api = createTRPCNext<AppRouter>({
             if (typeof window === 'undefined') {
               headers.set('user-agent', 'XalesIn-ERP/1.0.0')
             }
+            
             
             return Object.fromEntries(headers)
           },
@@ -138,7 +139,6 @@ export const api = createTRPCNext<AppRouter>({
  * Use this for server-side operations or when you don't need React Query features
  */
 export const vanillaApi = createTRPCProxyClient<AppRouter>({
-  transformer: superjson,
   links: [
     loggerLink({
       enabled: (opts) =>
@@ -147,6 +147,12 @@ export const vanillaApi = createTRPCProxyClient<AppRouter>({
     }),
     httpBatchLink({
       url: `${getBaseUrl()}/api/trpc`,
+      
+      /**
+       * Transformer used for data de-serialization from the server
+       */
+      transformer: superjson,
+      
       headers() {
         return {
           'x-trpc-source': 'vanilla',
@@ -171,6 +177,7 @@ export const createServerSideHelpers = async () => {
     ctx: await createTRPCContext({
       req: {} as any,
       res: {} as any,
+      info: {} as any, // Add required info property for CreateNextContextOptions
     }),
     transformer: superjson,
   })
@@ -237,14 +244,13 @@ export function useApiErrorHandler() {
         console.error('API Error:', apiError)
       }
       
-      // You can add toast notifications, error tracking, etc. here
       return apiError
     },
   }
 }
 
 /**
- * Utility function to check if an error is a specific tRPC error code
+ * Check if error is a specific tRPC error code
  */
 export function isTRPCError(error: any, code?: string): boolean {
   if (!error?.data?.code) return false

@@ -16,7 +16,6 @@
  */
 
 import { type AppType } from 'next/app'
-import { type Session } from 'next-auth'
 import Head from 'next/head'
 import { Toaster } from 'react-hot-toast'
 import { ThemeProvider } from 'next-themes'
@@ -74,9 +73,9 @@ function Analytics() {
 /**
  * Main App component
  */
-const MyApp: AppType<{ session: Session | null }> = ({
+const MyApp: AppType = ({
   Component,
-  pageProps: { session, ...pageProps },
+  pageProps,
 }) => {
   // Create a stable QueryClient instance
   const [queryClient] = useState(
@@ -86,8 +85,8 @@ const MyApp: AppType<{ session: Session | null }> = ({
           queries: {
             // Stale time: 5 minutes
             staleTime: 5 * 60 * 1000,
-            // Cache time: 10 minutes
-            cacheTime: 10 * 60 * 1000,
+            // Garbage collection time: 10 minutes
+            gcTime: 10 * 60 * 1000,
             // Retry failed requests
             retry: (failureCount, error: any) => {
               // Don't retry on 4xx errors (client errors)
