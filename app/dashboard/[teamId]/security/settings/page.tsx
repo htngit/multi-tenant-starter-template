@@ -81,7 +81,7 @@ export default function SettingsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">0</div>
             <p className="text-xs text-muted-foreground">
-              This month's usage
+              This month&apos;s usage
             </p>
           </CardContent>
         </Card>
@@ -92,7 +92,7 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle>Organization Settings</CardTitle>
             <CardDescription>
-              Configure your organization's basic information and preferences
+              Configure your organization&apos;s basic information and preferences
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -144,7 +144,7 @@ export default function RightAccessDefaultPage() {
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            You have unsaved changes. Don't forget to save your default permission settings.
+            You have unsaved changes. Don&apos;t forget to save your default permission settings.
           </AlertDescription>
         </Alert>
       )}

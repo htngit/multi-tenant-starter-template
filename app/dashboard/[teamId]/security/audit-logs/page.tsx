@@ -70,7 +70,7 @@ export default function AuditLogsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-green-600">0</div>
             <p className="text-xs text-muted-foreground">
-              Today's authentication
+              Today&apos;s authentication
             </p>
           </CardContent>
         </Card>

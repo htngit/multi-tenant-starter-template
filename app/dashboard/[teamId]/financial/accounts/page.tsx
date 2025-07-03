@@ -62,7 +62,7 @@ export default function AccountsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">$0.00</div>
             <p className="text-xs text-muted-foreground">
-              Owner's equity
+              Owner&apos;s equity
             </p>
           </CardContent>
         </Card>
