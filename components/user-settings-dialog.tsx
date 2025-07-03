@@ -409,12 +409,11 @@ export function UserSettingsDialog({ children }: UserSettingsDialogProps) {
                         <Shield className="h-3 w-3" />
                         Aktif
                       </Badge>
-                      {user.hasVerifiedEmail && (
-                        <Badge variant="default" className="flex items-center gap-1">
-                          <Mail className="h-3 w-3" />
-                          Email Terverifikasi
-                        </Badge>
-                      )}
+                      {/* TODO: Implement email verification status check with Stack Auth */}
+                      <Badge variant="default" className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        Email Terdaftar
+                      </Badge>
                     </div>
                   </div>
                 </div>
@@ -436,12 +435,12 @@ export function UserSettingsDialog({ children }: UserSettingsDialogProps) {
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Bergabung:</span>
-                    <span>{formatDate(user.createdAt)}</span>
+                    <span>{/* TODO: Implement proper date from Stack Auth */}Tidak tersedia</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Globe className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Terakhir aktif:</span>
-                    <span>{formatDate(user.lastActiveAt)}</span>
+                    <span>{/* TODO: Implement proper date from Stack Auth */}Tidak tersedia</span>
                   </div>
                 </div>
 

@@ -74,27 +74,41 @@ export function PerformanceMonitor() {
   
   // Update metrics from performance monitor
   useEffect(() => {
-    if (performanceMetrics.metrics) {
+    if (performanceMetrics.stats) {
       setMetrics(prev => {
-        const newMetrics = [...prev, ...performanceMetrics.metrics.slice(prev.length)];
+        const stats = performanceMetrics.stats!;
+        const newMetric: PerformanceMetric = {
+          type: 'query',
+          name: 'performance_stats',
+          duration: stats.queries.avgDuration || 0,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            queryCount: stats.queries.total,
+            totalQueries: stats.queries.total,
+            avgDuration: stats.queries.avgDuration,
+            maxDuration: stats.queries.maxDuration,
+            errorRate: stats.queries.errorRate,
+            cacheHitRate: stats.queries.cacheHitRate
+          }
+        };
+        const newMetrics = [...prev, newMetric];
         // Keep only last 100 metrics
         return newMetrics.slice(-100);
       });
     }
-  }, [performanceMetrics.metrics]);
+  }, [performanceMetrics.stats]);
   
   // Update cache stats
   useEffect(() => {
     const updateCacheStats = () => {
-      const stats = UnifiedCache.getStats();
+      // Since UnifiedCache.getStats() doesn't exist, provide default values
+      // TODO: Implement cache statistics tracking in UnifiedCache
       setCacheStats({
-        hits: stats.hits || 0,
-        misses: stats.misses || 0,
-        hitRate: stats.hits && stats.misses 
-          ? (stats.hits / (stats.hits + stats.misses)) * 100 
-          : 0,
-        totalSize: stats.size || 0,
-        itemCount: stats.count || 0,
+        hits: 0,
+        misses: 0,
+        hitRate: 0,
+        totalSize: 0,
+        itemCount: 0,
       });
     };
     

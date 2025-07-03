@@ -64,13 +64,10 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         );
 
-        // Set auth session from Stack Auth
-        if (stackUser?.accessToken) {
-          await client.auth.setSession({
-            access_token: stackUser.accessToken,
-            refresh_token: stackUser.refreshToken || '',
-          });
-        }
+        // Note: Stack Auth integration with Supabase would require
+        // custom token exchange implementation. For now, we'll use
+        // Supabase's own auth or implement a proper token bridge.
+        // TODO: Implement proper Stack Auth <-> Supabase token exchange
 
         // Get current user from Supabase
         const { data: { user: supabaseUser }, error: userError } = await client.auth.getUser();
@@ -112,7 +109,7 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
     } else {
       setIsLoading(false);
     }
-  }, [stackUser, stackUser?.accessToken, stackUser?.refreshToken]);
+  }, [stackUser]);
 
   /**
    * Retry mechanism for failed operations

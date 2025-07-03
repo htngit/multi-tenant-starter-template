@@ -36,6 +36,8 @@ import type { Database } from '@/lib/database.types';
 
 type Product = Database['public']['Tables']['products']['Row'] & {
   categories?: { name: string } | null;
+  currentStock?: number;
+  stock_movements?: Array<{ quantity: number; movement_type: string }>;
 };
 
 type InventorySummary = {
@@ -79,15 +81,19 @@ export function InventoryItemsClient({
   } = trpc.inventory.getProducts.useQuery(
     {
       search: searchTerm,
-      isActive: filterStatus === 'active',
+      lowStock: filterStatus === 'low_stock',
       page,
       limit: pageSize,
     },
     {
       initialData: {
         products: initialProducts,
-        total: initialProducts.length,
-        hasMore: initialProducts.length >= pageSize,
+        pagination: {
+          page: 1,
+          limit: pageSize,
+          total: initialProducts.length,
+          pages: Math.ceil(initialProducts.length / pageSize),
+        },
       },
       staleTime: 30 * 1000, // 30 seconds
       refetchOnWindowFocus: false,
@@ -110,7 +116,7 @@ export function InventoryItemsClient({
     onSuccess: () => {
       refetch();
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       console.error('Failed to update product:', error);
       // Show toast notification
     },
@@ -120,7 +126,7 @@ export function InventoryItemsClient({
     onSuccess: () => {
       refetch();
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       console.error('Failed to delete product:', error);
       // Show toast notification
     },
@@ -132,8 +138,9 @@ export function InventoryItemsClient({
 
   // Stock status helper
   const getStockStatus = (product: Product) => {
-    if (product.stock_quantity as number <= 0) return 'out_of_stock';
-    if ((product.stock_quantity as number) <= (product.min_stock_level as number)) return 'low_stock';
+    const currentStock = product.currentStock || 0;
+    if (currentStock <= 0) return 'out_of_stock';
+    if (currentStock <= (product.min_stock_level || 0)) return 'low_stock';
     return 'in_stock';
   };
 
@@ -297,9 +304,9 @@ export function InventoryItemsClient({
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <p className="font-medium">{product.stock_quantity}</p>
+                          <p className="font-medium">{product.currentStock || 0}</p>
                           <p className="text-muted-foreground">
-                            Min: {product.min_stock_level}
+                            Min: {product.min_stock_level || 0}
                           </p>
                         </div>
                       </TableCell>
@@ -311,7 +318,7 @@ export function InventoryItemsClient({
                       </TableCell>
                       <TableCell>
                         <span className="font-medium">
-                          ${((product.unit_price || 0) * product.stock_quantity).toFixed(2)}
+                          ${((product.selling_price || 0) * (product.currentStock || 0)).toFixed(2)}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -335,8 +342,7 @@ export function InventoryItemsClient({
                               onClick={() => {
                                 if (confirm('Are you sure you want to delete this product?')) {
                                   deleteProductMutation.mutate({
-                                    tenantId,
-                                    productId: product.id,
+                                    id: product.id,
                                   });
                                 }
                               }}
@@ -354,7 +360,7 @@ export function InventoryItemsClient({
             </div>
             
             {/* Pagination */}
-            {productsData?.hasMore && (
+            {productsData?.pagination && page < productsData.pagination.pages && (
               <div className="flex justify-center">
                 <Button 
                   variant="outline" 

@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { httpBatchLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { useState } from 'react';
+import superjson from 'superjson';
 import { SupabaseProvider } from '@/components/providers/supabase-provider';
 import type { AppRouter } from '@/server/api/root';
 
@@ -72,6 +73,7 @@ export function Provider(props: { children?: React.ReactNode }) {
       links: [
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
+          transformer: superjson,
           // Add auth headers from Stack Auth
           async headers() {
             const headers: Record<string, string> = {};
@@ -109,8 +111,7 @@ export function Provider(props: { children?: React.ReactNode }) {
             {/* Development tools - only in development */}
             {process.env.NODE_ENV === 'development' && (
               <ReactQueryDevtools 
-                initialIsOpen={false} 
-                position="bottom-right"
+                initialIsOpen={false}
               />
             )}
           </ThemeProvider>

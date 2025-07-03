@@ -277,6 +277,7 @@ export function AppSidebar({ teamId, teamName }: AppSidebarProps) {
   }
 
   const isActive = (href: string) => {
+    if (!pathname) return false
     if (href === `/dashboard/${teamId}`) {
       return pathname === `/dashboard/${teamId}`
     }
