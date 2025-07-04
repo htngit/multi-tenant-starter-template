@@ -446,8 +446,10 @@ export const createAdminClient = (userContext?: {
   // Add audit context if provided
   if (userContext) {
     // Set custom headers for audit logging
-    client.rest.headers = {
-      ...client.rest.headers,
+    // Use type assertion to access protected property
+    const supabaseClient = client as any;
+    supabaseClient.rest.headers = {
+      ...supabaseClient.rest.headers,
       'x-user-id': userContext.userId,
       'x-tenant-id': userContext.tenantId,
       'x-user-roles': userContext.roles.join(','),

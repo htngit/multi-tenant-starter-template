@@ -611,13 +611,16 @@ export function withPerformanceMonitoring<T extends any[], R>(
  * Utility function to wrap Supabase queries with performance monitoring
  */
 export function monitorSupabaseQuery<T>(
-  queryPromise: Promise<T>,
+  query: Promise<T> | any,
   table: string,
   operation: QueryMetric['operation'],
   context?: { userId?: string; teamId?: string }
 ): Promise<T> {
   const monitor = PerformanceMonitor.getInstance();
   const startTime = performance.now();
+  
+  // Convert query to promise if it's not already one
+  const queryPromise = Promise.resolve(query);
   
   return queryPromise
     .then((result: any) => {

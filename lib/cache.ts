@@ -27,7 +27,7 @@ interface CacheEntry<T> {
 
 // In-memory cache for server-side operations
 class MemoryCache {
-  private cache = new Map<string, CacheEntry<any>>();
+  public cache = new Map<string, CacheEntry<any>>();
   private maxSize = 1000; // Maximum number of entries
   private cleanupInterval: NodeJS.Timeout;
 
@@ -44,7 +44,9 @@ class MemoryCache {
     // Remove oldest entries if cache is full
     if (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value;
-      this.cache.delete(oldestKey);
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
     }
 
     this.cache.set(key, {
@@ -76,11 +78,11 @@ class MemoryCache {
   }
 
   invalidateByTag(tag: string): void {
-    for (const [key, entry] of this.cache.entries()) {
+    Array.from(this.cache.entries()).forEach(([key, entry]) => {
       if (entry.tags.includes(tag)) {
         this.cache.delete(key);
       }
-    }
+    });
   }
 
   clear(): void {
@@ -89,11 +91,11 @@ class MemoryCache {
 
   private cleanup(): void {
     const now = Date.now();
-    for (const [key, entry] of this.cache.entries()) {
+    Array.from(this.cache.entries()).forEach(([key, entry]) => {
       if (now - entry.timestamp > entry.ttl) {
         this.cache.delete(key);
       }
-    }
+    });
   }
 
   // Get cache statistics
@@ -260,6 +262,28 @@ export class UnifiedCache {
     } else {
       // Client-side: use browser cache
       return BrowserCache.get<T>(key);
+    }
+  }
+
+  static isStale(key: string): boolean {
+    if (typeof window === 'undefined') {
+      // Server-side: check memory cache
+      const entry = memoryCache.cache.get(key);
+      if (!entry) return true;
+      return Date.now() - entry.timestamp > entry.ttl;
+    } else {
+      // Client-side: check browser cache
+      try {
+        const stored = localStorage.getItem(`supabase_cache_${key}`) ||
+                      sessionStorage.getItem(`supabase_cache_${key}`);
+        
+        if (!stored) return true;
+
+        const entry = JSON.parse(stored);
+        return Date.now() - entry.timestamp > entry.ttl;
+      } catch (error) {
+        return true;
+      }
     }
   }
 

@@ -10,12 +10,12 @@
  */
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { createServerComponentClient, createRouteHandlerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 import type { Database } from './database.types';
 import { performanceMonitor, monitorSupabaseQuery } from './performance';
 import { UnifiedCache, CacheKeys, CacheTags } from './cache';
 import { withRetry, SupabaseError } from './supabase';
+import { PostgrestBuilder } from '@supabase/postgrest-js';
 
 // Dynamic import for next/headers to avoid issues with pages directory
 let cookiesModule: any = null;
@@ -37,9 +37,23 @@ export function createServerSupabaseClient() {
   
   const cookieStore = cookiesModule.cookies();
   
-  const client = createServerComponentClient<Database>({
-    cookies: () => cookieStore,
-  });
+  const client = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          cookieStore.set(name, value, options);
+        },
+        remove(name: string, options: CookieOptions) {
+          cookieStore.set(name, '', { ...options, maxAge: 0 });
+        },
+      },
+    }
+  );
   
   // Add performance monitoring to all queries
   const originalFrom = client.from.bind(client);
@@ -125,9 +139,23 @@ export function createRouteHandlerSupabaseClient() {
   
   const cookieStore = cookiesModule.cookies();
   
-  return createRouteHandlerClient<Database>({
-    cookies: () => cookieStore,
-  });
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          cookieStore.set(name, value, options);
+        },
+        remove(name: string, options: CookieOptions) {
+          cookieStore.set(name, '', { ...options, maxAge: 0 });
+        },
+      },
+    }
+  );
 }
 
 /**
@@ -246,16 +274,16 @@ export async function getInventorySummarySSR(teamId: string) {
     async () => {
       const supabase = createServerSupabaseClient();
       
-      const query = supabase
+      const queryPromise = supabase
         .from('products')
         .select(`
           id,
           name,
-          unit_price,
+          selling_price,
           min_stock_level,
           stock_movements!inner(
             quantity,
-            type,
+            movement_type,
             warehouse_id
           )
         `)
@@ -263,11 +291,11 @@ export async function getInventorySummarySSR(teamId: string) {
         .eq('is_active', true);
       
       const result = await monitorSupabaseQuery(
-        query,
+        queryPromise,
         'products',
         'select',
         { teamId }
-      );
+      ) as { data: any; error: any };
       
       if (result.error) {
         throw new SupabaseError(
@@ -287,13 +315,13 @@ export async function getInventorySummarySSR(teamId: string) {
       products.forEach(product => {
         const currentStock = product.stock_movements
           .reduce((total, movement) => {
-            return movement.type === 'in' 
+            return movement.movement_type === 'in' 
               ? total + movement.quantity 
               : total - movement.quantity;
           }, 0);
         
         totalItems += currentStock;
-        totalValue += currentStock * product.unit_price;
+        totalValue += currentStock * (product.selling_price || 0);
         
         if (currentStock === 0) {
           outOfStockItems++;
@@ -348,7 +376,7 @@ export async function getProductsSSR(
     async () => {
       const supabase = createServerSupabaseClient();
       
-      let query = supabase
+      let queryBuilder = supabase
         .from('products')
         .select(`
           *,
@@ -357,7 +385,9 @@ export async function getProductsSSR(
           stock_movements(
             id,
             quantity,
-            type,
+            movement_type,
+            reference_id,
+            notes,
             created_at,
             warehouses(id, name)
           )
@@ -365,28 +395,28 @@ export async function getProductsSSR(
         .eq('team_id', teamId)
         .eq('is_active', true);
       
-      // Apply filters
+      // Apply filters with type assertions to avoid deep type instantiation
       if (search) {
-        query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%,description.ilike.%${search}%`);
+        queryBuilder = (queryBuilder as any).or(`name.ilike.%${search}%,sku.ilike.%${search}%,description.ilike.%${search}%`);
       }
       
       if (categoryId) {
-        query = query.eq('category_id', categoryId);
+        queryBuilder = (queryBuilder as any).eq('category_id', categoryId);
       }
       
       if (supplierId) {
-        query = query.eq('supplier_id', supplierId);
+        queryBuilder = (queryBuilder as any).eq('supplier_id', supplierId);
       }
       
-      // Apply pagination
-      query = query.range(offset, offset + limit - 1);
+      // Apply pagination and execute
+      const queryPromise = queryBuilder.range(offset, offset + limit - 1);
       
       const result = await monitorSupabaseQuery(
-        query,
+        queryPromise,
         'products',
         'select',
         { teamId }
-      );
+      ) as { data: any; error: any };
       
       if (result.error) {
         throw new SupabaseError(
@@ -401,7 +431,7 @@ export async function getProductsSSR(
       const productsWithStock = (result.data || []).map(product => {
         const currentStock = product.stock_movements
           .reduce((total, movement) => {
-            return movement.type === 'in' 
+            return movement.movement_type === 'in' 
               ? total + movement.quantity 
               : total - movement.quantity;
           }, 0);
@@ -417,7 +447,7 @@ export async function getProductsSSR(
           ...product,
           currentStock,
           stockStatus: stockStatusCalc,
-          stockValue: currentStock * product.unit_price,
+          stockValue: currentStock * (product.selling_price || 0),
         };
       });
       
@@ -455,7 +485,7 @@ export async function getProductSSR(productId: string, teamId: string) {
     async () => {
       const supabase = createServerSupabaseClient();
       
-      const query = supabase
+      const queryPromise = supabase
         .from('products')
         .select(`
           *,
@@ -464,9 +494,8 @@ export async function getProductSSR(productId: string, teamId: string) {
           stock_movements(
             id,
             quantity,
-            type,
-            unit_cost,
-            reference,
+            movement_type,
+            reference_id,
             notes,
             created_at,
             warehouses(id, name, location)
@@ -477,11 +506,11 @@ export async function getProductSSR(productId: string, teamId: string) {
         .single();
       
       const result = await monitorSupabaseQuery(
-        query,
+        queryPromise,
         'products',
         'select',
         { teamId }
-      );
+      ) as { data: any; error: any };
       
       if (result.error) {
         throw new SupabaseError(
@@ -500,22 +529,21 @@ export async function getProductSSR(productId: string, teamId: string) {
       // Calculate current stock and movements summary
       const currentStock = product.stock_movements
         .reduce((total, movement) => {
-          return movement.type === 'in' 
+          return movement.movement_type === 'in' 
             ? total + movement.quantity 
             : total - movement.quantity;
         }, 0);
       
-      const stockValue = currentStock * product.unit_price;
-      const totalCost = product.stock_movements
-        .filter(m => m.type === 'in' && m.unit_cost)
-        .reduce((total, m) => total + (m.unit_cost! * m.quantity), 0);
+      const stockValue = currentStock * (product.selling_price || 0);
+      // Note: unit_cost is not available in stock_movements table
+      const totalCost = 0; // This would need to be calculated from purchase orders or other sources
       
       return {
         ...product,
         currentStock,
         stockValue,
         totalCost,
-        averageCost: totalCost > 0 ? totalCost / currentStock : 0,
+        averageCost: 0, // Would need purchase order data to calculate
         stockStatus: currentStock === 0 
           ? 'out_of_stock' 
           : currentStock <= product.min_stock_level 

@@ -7,6 +7,7 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/
 
 type Product = Database['public']['Tables']['products']['Row'] & {
   categories?: { name: string } | null;
+  currentStock?: number;
 };
 
 type StockMovement = Database['public']['Tables']['stock_movements']['Row'];
@@ -64,8 +65,8 @@ export function useRealtimeInventory({
     return products.reduce(
       (summary, product) => {
         const isActive = product.is_active;
-        const stockQuantity = product.stock_quantity || 0;
-        const unitPrice = product.unit_price || 0;
+        const stockQuantity = product.currentStock || 0;
+        const unitPrice = product.selling_price || 0;
         const minStockLevel = product.min_stock_level || 0;
         
         if (isActive) {
@@ -101,13 +102,13 @@ export function useRealtimeInventory({
         
         switch (payload.eventType) {
           case 'INSERT':
-            if (payload.new && payload.new.tenant_id === tenantId) {
+            if (payload.new && payload.new.team_id === tenantId) {
               updatedProducts.push(payload.new as Product);
             }
             break;
             
           case 'UPDATE':
-            if (payload.new && payload.new.tenant_id === tenantId) {
+            if (payload.new && payload.new.team_id === tenantId) {
               const index = updatedProducts.findIndex(p => p.id === payload.new.id);
               if (index !== -1) {
                 updatedProducts[index] = payload.new as Product;
@@ -135,7 +136,7 @@ export function useRealtimeInventory({
   // Handle stock movement changes
   const handleStockMovementChange = useCallback(
     (payload: RealtimePostgresChangesPayload<StockMovement>) => {
-      if (payload.eventType === 'INSERT' && payload.new && payload.new.tenant_id === tenantId) {
+      if (payload.eventType === 'INSERT' && payload.new && payload.new.team_id === tenantId) {
         const stockMovement = payload.new;
         
         // Update the corresponding product's stock quantity
@@ -143,12 +144,12 @@ export function useRealtimeInventory({
           const updatedProducts = currentProducts.map((product) => {
             if (product.id === stockMovement.product_id) {
               const newStockQuantity = Math.max(0, 
-                (product.stock_quantity || 0) + (stockMovement.quantity_change || 0)
+                (product.currentStock || 0) + (stockMovement.quantity || 0)
               );
               
               return {
                 ...product,
-                stock_quantity: newStockQuantity,
+                currentStock: newStockQuantity,
               };
             }
             return product;
@@ -283,12 +284,9 @@ export function useRealtimeProduct(productId: string, tenantId: string) {
       try {
         const { data, error } = await supabase
           .from('products')
-          .select(`
-            *,
-            categories(name)
-          `)
+          .select('*')
           .eq('id', productId)
-          .eq('tenant_id', tenantId)
+          .eq('team_id', tenantId)
           .single();
 
         if (error) throw error;
@@ -356,14 +354,14 @@ export function useStockAlerts(tenantId: string) {
     const lowStock = realtimeProducts.filter(
       (product) => 
         product.is_active && 
-        product.stock_quantity > 0 && 
-        product.stock_quantity <= product.min_stock_level
+        (product.currentStock || 0) > 0 && 
+        (product.currentStock || 0) <= (product.min_stock_level || 0)
     );
 
     const outOfStock = realtimeProducts.filter(
       (product) => 
         product.is_active && 
-        product.stock_quantity <= 0
+        (product.currentStock || 0) <= 0
     );
 
     setAlerts({ lowStock, outOfStock });
