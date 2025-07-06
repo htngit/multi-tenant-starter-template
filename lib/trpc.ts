@@ -360,8 +360,8 @@ export function createPermissionProcedure(permission: string) {
 export const batchMiddleware = t.middleware(async ({ ctx, next, input }) => {
   // If input is an array, handle as batch operation
   if (Array.isArray(input)) {
-    const results = []
-    const errors = []
+    const results: any[] = []
+    const errors: { index: number; error: any }[] = []
     
     for (let i = 0; i < input.length; i++) {
       try {
@@ -380,7 +380,7 @@ export const batchMiddleware = t.middleware(async ({ ctx, next, input }) => {
       })
     }
     
-    return results
+    return { data: results, success: true } as any
   }
   
   return next()
@@ -394,4 +394,3 @@ export const batchProcedure = protectedProcedure.use(batchMiddleware)
 /**
  * Export types for client usage
  */
-export type { Context }
