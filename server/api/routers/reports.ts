@@ -337,7 +337,8 @@ export const reportsRouter = createTRPCRouter({
         // Group by category
         const categoryData = new Map()
         products?.forEach(product => {
-          const categoryName = product.categories?.name || 'Uncategorized'
+          const category = Array.isArray(product.categories) ? product.categories[0] : product.categories;
+          const categoryName = category?.name || 'Uncategorized'
           
           if (!categoryData.has(categoryName)) {
             categoryData.set(categoryName, {
@@ -349,13 +350,13 @@ export const reportsRouter = createTRPCRouter({
             })
           }
 
-          const category = categoryData.get(categoryName)
-          category.productCount += 1
-          category.totalQuantity += product.stock_quantity
-          category.totalValue += product.stock_quantity * product.unit_price
+          const categoryStats = categoryData.get(categoryName)
+          categoryStats.productCount += 1
+          categoryStats.totalQuantity += product.stock_quantity
+          categoryStats.totalValue += product.stock_quantity * product.unit_price
           
           if (product.stock_quantity < product.min_stock_level) {
-            category.lowStockCount += 1
+            categoryStats.lowStockCount += 1
           }
         })
 
@@ -487,7 +488,8 @@ export const reportsRouter = createTRPCRouter({
         // Group expenses by category
         const expensesByCategory = new Map()
         expenseData?.forEach(expense => {
-          const category = expense.expense_categories?.name || 'Uncategorized'
+          const expenseCategory = Array.isArray(expense.expense_categories) ? expense.expense_categories[0] : expense.expense_categories;
+          const category = expenseCategory?.name || 'Uncategorized'
           expensesByCategory.set(category, (expensesByCategory.get(category) || 0) + expense.amount)
         })
 

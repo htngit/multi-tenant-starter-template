@@ -24,6 +24,18 @@ import {
   auditedProcedure,
   createPermissionProcedure
 } from '../../../lib/trpc'
+import { 
+  UnifiedCache, 
+  CacheKeys, 
+  CacheTags, 
+  CacheMetrics,
+  withCache 
+} from '../../../lib/cache'
+import { 
+  StandardErrorHandler,
+  ErrorCategory,
+  withErrorHandling
+} from '../../../lib/error-handling'
 
 /**
  * Input validation schemas
@@ -111,11 +123,24 @@ const userInviteProcedure = createPermissionProcedure('user:invite')
  */
 export const usersRouter = createTRPCRouter({
   /**
-   * Get current user profile
+   * Get current user profile with caching
    */
   getProfile: protectedProcedure
     .query(async ({ ctx }) => {
-      try {
+      const cacheKey = CacheKeys.userProfile(ctx.user.userId)
+      const startTime = performance.now()
+      
+      return withErrorHandling(async () => {
+        // Try cache first
+        const cached = UnifiedCache.get(cacheKey)
+        if (cached) {
+          CacheMetrics.recordHit()
+          CacheMetrics.recordTime(performance.now() - startTime)
+          return cached
+        }
+        
+        CacheMetrics.recordMiss()
+        
         const { data: user, error } = await ctx.supabase
           .from('users')
           .select(`
@@ -135,11 +160,20 @@ export const usersRouter = createTRPCRouter({
           .single()
 
         if (error) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'User not found',
-            cause: error,
+          throw StandardErrorHandler.handleDatabaseError(error, {
+            operation: 'getProfile',
+            userId: ctx.user.userId,
+            tenantId: ctx.user.tenantId,
+            resource: 'user'
           })
+        }
+
+        if (!user) {
+          throw StandardErrorHandler.notFoundError('User', {
+            operation: 'getProfile',
+            userId: ctx.user.userId,
+            tenantId: ctx.user.tenantId
+          }, ctx.user.userId)
         }
 
         // Flatten user roles and permissions
@@ -147,28 +181,37 @@ export const usersRouter = createTRPCRouter({
         const permissions = roles.flatMap((role: any) => role.permissions || [])
         const uniquePermissions = [...new Set(permissions)]
 
-        return {
+        const result = {
           ...user,
           roles,
           permissions: uniquePermissions,
           preferences: user.user_preferences?.[0] || null,
         }
-      } catch (error) {
-        console.error('Get user profile error:', error)
-        throw error instanceof TRPCError ? error : new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch user profile',
+        
+        // Cache the result
+        UnifiedCache.set(cacheKey, result, {
+          ttl: 5 * 60 * 1000, // 5 minutes
+          tags: [CacheTags.user(ctx.user.userId), CacheTags.permissions]
         })
-      }
+        CacheMetrics.recordSet()
+        CacheMetrics.recordTime(performance.now() - startTime)
+        
+        return result
+      }, {
+        operation: 'getProfile',
+        userId: ctx.user.userId,
+        tenantId: ctx.user.tenantId,
+        resource: 'user'
+      })
     }),
 
   /**
-   * Update current user profile
+   * Update current user profile with cache invalidation
    */
   updateProfile: auditedProcedure
     .input(userProfileSchema.partial().omit({ email: true }))
     .mutation(async ({ input, ctx }) => {
-      try {
+      return withErrorHandling(async () => {
         const { data: user, error } = await ctx.supabase
           .from('users')
           .update({
@@ -181,21 +224,34 @@ export const usersRouter = createTRPCRouter({
           .single()
 
         if (error) {
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to update user profile',
-            cause: error,
+          throw StandardErrorHandler.handleDatabaseError(error, {
+            operation: 'updateProfile',
+            userId: ctx.user.userId,
+            tenantId: ctx.user.tenantId,
+            resource: 'user',
+            metadata: { updateFields: Object.keys(input) }
           })
         }
 
+        if (!user) {
+          throw StandardErrorHandler.notFoundError('User', {
+            operation: 'updateProfile',
+            userId: ctx.user.userId,
+            tenantId: ctx.user.tenantId
+          }, ctx.user.userId)
+        }
+
+        // Invalidate user-related caches
+        UnifiedCache.invalidateByTag(CacheTags.user(ctx.user.userId))
+        CacheMetrics.recordInvalidation()
+
         return user
-      } catch (error) {
-        console.error('Update user profile error:', error)
-        throw error instanceof TRPCError ? error : new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to update user profile',
-        })
-      }
+      }, {
+        operation: 'updateProfile',
+        userId: ctx.user.userId,
+        tenantId: ctx.user.tenantId,
+        resource: 'user'
+      })
     }),
 
   /**
@@ -740,8 +796,8 @@ export const usersRouter = createTRPCRouter({
             resource_type: 'user',
             resource_id: ctx.user.userId,
             details: { message: 'User changed their password' },
-            ip_address: ctx.req?.headers['x-forwarded-for'] || ctx.req?.connection?.remoteAddress,
-            user_agent: ctx.req?.headers['user-agent'],
+            ip_address: ctx.ip,
+            user_agent: ctx.userAgent,
           })
 
         return {

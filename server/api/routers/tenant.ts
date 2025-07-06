@@ -24,6 +24,13 @@ import {
   auditedProcedure,
   createPermissionProcedure
 } from '../../../lib/trpc'
+import { 
+  UnifiedCache, 
+  CacheKeys, 
+  CacheTags, 
+  CacheMetrics,
+  withCache 
+} from '../../../lib/cache'
 
 /**
  * Input validation schemas
@@ -86,11 +93,24 @@ const billingWriteProcedure = createPermissionProcedure('billing:write')
  */
 export const tenantRouter = createTRPCRouter({
   /**
-   * Get current tenant profile
+   * Get current tenant profile with caching
    */
   getProfile: tenantReadProcedure
     .query(async ({ ctx }) => {
+      const cacheKey = CacheKeys.teamSettings(ctx.user.tenantId)
+      const startTime = performance.now()
+      
       try {
+        // Try cache first
+        const cached = UnifiedCache.get(cacheKey)
+        if (cached) {
+          CacheMetrics.recordHit()
+          CacheMetrics.recordTime(performance.now() - startTime)
+          return cached
+        }
+        
+        CacheMetrics.recordMiss()
+        
         const { data: tenant, error } = await ctx.supabase
           .from('tenants')
           .select(`
@@ -110,8 +130,17 @@ export const tenantRouter = createTRPCRouter({
           })
         }
 
+        // Cache the result
+        UnifiedCache.set(cacheKey, tenant, {
+          ttl: 10 * 60 * 1000, // 10 minutes
+          tags: [CacheTags.team(ctx.user.tenantId), CacheTags.settings]
+        })
+        CacheMetrics.recordSet()
+        CacheMetrics.recordTime(performance.now() - startTime)
+
         return tenant
       } catch (error) {
+        CacheMetrics.recordTime(performance.now() - startTime)
         console.error('Get tenant profile error:', error)
         throw error instanceof TRPCError ? error : new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -121,7 +150,7 @@ export const tenantRouter = createTRPCRouter({
     }),
 
   /**
-   * Update tenant profile
+   * Update tenant profile with cache invalidation
    */
   updateProfile: tenantWriteProcedure
     .input(tenantProfileSchema.partial())
@@ -162,6 +191,10 @@ export const tenantRouter = createTRPCRouter({
             cause: error,
           })
         }
+
+        // Invalidate tenant-related caches
+        UnifiedCache.invalidateByTag(CacheTags.team(ctx.user.tenantId))
+        CacheMetrics.recordInvalidation()
 
         return tenant
       } catch (error) {
@@ -276,7 +309,7 @@ export const tenantRouter = createTRPCRouter({
 
         // Prepare settings for upsert
         const settingsToUpsert = Object.entries(settings).map(([key, value]) => {
-          const rule = categoryRules[key as keyof typeof categoryRules]
+          const rule = (categoryRules as any)[key]
           if (!rule) {
             throw new TRPCError({
               code: 'BAD_REQUEST',

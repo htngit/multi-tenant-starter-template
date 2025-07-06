@@ -24,6 +24,13 @@ import {
   auditedProcedure,
   createPermissionProcedure
 } from '../../../lib/trpc'
+import { 
+  UnifiedCache, 
+  CacheKeys, 
+  CacheTags, 
+  CacheMetrics,
+  withCache 
+} from '../../../lib/cache'
 
 /**
  * Input validation schemas
@@ -119,11 +126,24 @@ const SYSTEM_PERMISSIONS = [
  */
 export const permissionsRouter = createTRPCRouter({
   /**
-   * Get all available permissions
+   * Get all available permissions with caching
    */
   getAvailablePermissions: permissionReadProcedure
     .query(async ({ ctx }) => {
+      const cacheKey = 'permissions:available'
+      const startTime = performance.now()
+      
       try {
+        // Try cache first
+        const cached = UnifiedCache.get(cacheKey)
+        if (cached) {
+          CacheMetrics.recordHit()
+          CacheMetrics.recordTime(performance.now() - startTime)
+          return cached
+        }
+        
+        CacheMetrics.recordMiss()
+        
         const { data: permissions, error } = await ctx.supabase
           .from('permissions')
           .select('*')
@@ -148,8 +168,17 @@ export const permissionsRouter = createTRPCRouter({
           return acc
         }, {} as Record<string, any[]>)
 
+        // Cache the result for 30 minutes (permissions rarely change)
+        UnifiedCache.set(cacheKey, groupedPermissions, {
+          ttl: 30 * 60 * 1000, // 30 minutes
+          tags: [CacheTags.permissions]
+        })
+        CacheMetrics.recordSet()
+        CacheMetrics.recordTime(performance.now() - startTime)
+
         return groupedPermissions
       } catch (error) {
+        CacheMetrics.recordTime(performance.now() - startTime)
         console.error('Get available permissions error:', error)
         throw error instanceof TRPCError ? error : new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -159,10 +188,9 @@ export const permissionsRouter = createTRPCRouter({
     }),
 
   /**
-   * Initialize system permissions
+   * Initialize system permissions with cache invalidation
    */
-  initializeSystemPermissions: auditedProcedure
-    .use(roleAdminProcedure.middleware)
+  initializeSystemPermissions: roleAdminProcedure
     .mutation(async ({ ctx }) => {
       try {
         // Check if permissions already exist
@@ -197,6 +225,10 @@ export const permissionsRouter = createTRPCRouter({
           })
         }
 
+        // Invalidate permissions cache after initialization
+        UnifiedCache.invalidateByTag(CacheTags.permissions)
+        CacheMetrics.recordInvalidation()
+
         return {
           success: true,
           message: `Created ${newPermissions.length} system permissions`,
@@ -212,7 +244,7 @@ export const permissionsRouter = createTRPCRouter({
     }),
 
   /**
-   * Get all roles in tenant
+   * Get all roles in tenant with caching
    */
   getRoles: roleReadProcedure
     .input(z.object({
@@ -220,8 +252,20 @@ export const permissionsRouter = createTRPCRouter({
       includePermissions: z.boolean().default(true),
     }))
     .query(async ({ input, ctx }) => {
+      const { includeSystemRoles, includePermissions } = input
+      const cacheKey = `roles:${ctx.user.tenantId}:${includeSystemRoles}:${includePermissions}`
+      const startTime = performance.now()
+      
       try {
-        const { includeSystemRoles, includePermissions } = input
+        // Try cache first
+        const cached = UnifiedCache.get(cacheKey)
+        if (cached) {
+          CacheMetrics.recordHit()
+          CacheMetrics.recordTime(performance.now() - startTime)
+          return cached
+        }
+        
+        CacheMetrics.recordMiss()
 
         let query = ctx.supabase
           .from('roles')
@@ -257,8 +301,17 @@ export const permissionsRouter = createTRPCRouter({
           permissions: includePermissions ? (role.permissions || []) : undefined,
         }))
 
+        // Cache the result for 10 minutes
+        UnifiedCache.set(cacheKey, processedRoles, {
+          ttl: 10 * 60 * 1000, // 10 minutes
+          tags: [CacheTags.permissions, CacheTags.team(ctx.user.tenantId)]
+        })
+        CacheMetrics.recordSet()
+        CacheMetrics.recordTime(performance.now() - startTime)
+
         return processedRoles
       } catch (error) {
+        CacheMetrics.recordTime(performance.now() - startTime)
         console.error('Get roles error:', error)
         throw error instanceof TRPCError ? error : new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -314,7 +367,7 @@ export const permissionsRouter = createTRPCRouter({
     }),
 
   /**
-   * Create new role
+   * Create new role with cache invalidation
    */
   createRole: roleWriteProcedure
     .input(roleSchema)
@@ -396,6 +449,11 @@ export const permissionsRouter = createTRPCRouter({
           })
         }
 
+        // Invalidate roles cache after creation
+        UnifiedCache.invalidateByTag(CacheTags.permissions)
+        UnifiedCache.invalidateByTag(CacheTags.team(ctx.user.tenantId))
+        CacheMetrics.recordInvalidation()
+
         return role
       } catch (error) {
         console.error('Create role error:', error)
@@ -407,7 +465,7 @@ export const permissionsRouter = createTRPCRouter({
     }),
 
   /**
-   * Update role
+   * Update role with cache invalidation
    */
   updateRole: roleWriteProcedure
     .input(updateRoleSchema)
@@ -518,6 +576,12 @@ export const permissionsRouter = createTRPCRouter({
             cause: error,
           })
         }
+
+        // Invalidate roles and user permissions cache after update
+        UnifiedCache.invalidateByTag(CacheTags.permissions)
+        UnifiedCache.invalidateByTag(CacheTags.team(ctx.user.tenantId))
+        UnifiedCache.invalidateByTag(CacheTags.permissions)
+        CacheMetrics.recordInvalidation()
 
         return role
       } catch (error) {
@@ -729,20 +793,32 @@ export const permissionsRouter = createTRPCRouter({
     }),
 
   /**
-   * Get user permissions (computed from roles)
+   * Get user permissions (computed from roles) with caching
    */
   getUserPermissions: protectedProcedure
     .input(z.object({
       userId: z.string().uuid('Invalid user ID').optional(),
     }))
     .query(async ({ input, ctx }) => {
+      const targetUserId = input.userId || ctx.user.userId
+      const cacheKey = CacheKeys.userPermissions(targetUserId, ctx.user.tenantId)
+      const startTime = performance.now()
+      
       try {
-        const targetUserId = input.userId || ctx.user.userId
-
         // If checking another user's permissions, verify permission
         if (input.userId && input.userId !== ctx.user.userId) {
           // This would be handled by permission middleware
         }
+
+        // Try cache first
+        const cached = UnifiedCache.get(cacheKey)
+        if (cached) {
+          CacheMetrics.recordHit()
+          CacheMetrics.recordTime(performance.now() - startTime)
+          return cached
+        }
+        
+        CacheMetrics.recordMiss()
 
         const { data: userRoles, error } = await ctx.supabase
           .from('user_roles')
@@ -769,28 +845,45 @@ export const permissionsRouter = createTRPCRouter({
         const allPermissions = new Set<string>()
         const roles = userRoles?.map(ur => ur.roles).filter(Boolean) || []
 
-        for (const role of roles) {
+        for (const userRole of userRoles || []) {
+          const role = userRole.roles as any
+          if (!role) continue
+
           // Add role permissions
-          if (role.permissions) {
+          if (role.permissions && Array.isArray(role.permissions)) {
             role.permissions.forEach((perm: string) => allPermissions.add(perm))
           }
 
           // Add parent role permissions (inheritance)
-          if (role.parent_role?.permissions) {
-            role.parent_role.permissions.forEach((perm: string) => allPermissions.add(perm))
+          if (Array.isArray(role.parent_role) && role.parent_role.length > 0) {
+            role.parent_role[0].permissions?.forEach((perm: string) => allPermissions.add(perm))
           }
         }
 
-        return {
+        const result = {
           userId: targetUserId,
-          roles: roles.map(role => ({
-            id: role.id,
-            name: role.name,
-            permissions: role.permissions || [],
-          })),
+          roles: (userRoles || []).map(ur => {
+            const role = Array.isArray(ur.roles) ? ur.roles[0] : ur.roles;
+            return {
+              id: role?.id,
+              name: role?.name,
+              permissions: role?.permissions || [],
+            };
+          }).filter(role => role.id),
           permissions: Array.from(allPermissions).sort(),
         }
+
+        // Cache the result for 5 minutes
+        UnifiedCache.set(cacheKey, result, {
+          ttl: 5 * 60 * 1000, // 5 minutes
+          tags: [CacheTags.permissions, CacheTags.user(targetUserId)]
+        })
+        CacheMetrics.recordSet()
+        CacheMetrics.recordTime(performance.now() - startTime)
+
+        return result
       } catch (error) {
+        CacheMetrics.recordTime(performance.now() - startTime)
         console.error('Get user permissions error:', error)
         throw error instanceof TRPCError ? error : new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
@@ -832,14 +925,14 @@ export const permissionsRouter = createTRPCRouter({
 
         // Check if user has the permission
         const hasPermission = userPermissions.data?.some(ur => {
-          const role = ur.roles
+          const role = ur.roles as any
           if (!role) return false
 
           // Check direct role permissions
           if (role.permissions?.includes(permission)) return true
 
           // Check parent role permissions
-          if (role.parent_role?.permissions?.includes(permission)) return true
+          if (Array.isArray(role.parent_role) && role.parent_role.length > 0 && role.parent_role[0].permissions?.includes(permission)) return true
 
           return false
         }) || false

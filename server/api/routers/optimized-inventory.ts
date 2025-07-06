@@ -172,12 +172,13 @@ const getProductsWithCache = withCache(
   async (teamId: string, filters: z.infer<typeof inventoryFiltersSchema>) => {
     const supabase = getSupabaseClient();
     
+    // Build dynamic query based on filters
     let query = supabase
       .from('products')
       .select(`
         *,
         categories(id, name),
-        suppliers(id, name)
+        suppliers(id, name, contact_email, contact_phone)
       `)
       .eq('team_id', teamId);
     
@@ -198,25 +199,32 @@ const getProductsWithCache = withCache(
       query = query.eq('is_active', filters.isActive);
     }
     
-    if (filters.priceRange) {
-      if (filters.priceRange.min) {
-        query = query.gte('selling_price', filters.priceRange.min);
-      }
-      if (filters.priceRange.max) {
-        query = query.lte('selling_price', filters.priceRange.max);
-      }
+    if (filters.stockStatus) {
+      // This requires a more complex query with stock calculations
+      // For now, we'll handle this in post-processing
     }
     
     // Apply sorting
-    const sortColumn = filters.sortBy === 'price' ? 'selling_price' : filters.sortBy;
-    query = query.order(sortColumn, { ascending: filters.sortOrder === 'asc' });
+    if (filters.sortBy) {
+      const direction = filters.sortOrder === 'desc' ? { ascending: false } : { ascending: true };
+      query = query.order(filters.sortBy, direction);
+    } else {
+      query = query.order('created_at', { ascending: false });
+    }
     
     // Apply pagination
-    const from = (filters.page - 1) * filters.limit;
-    const to = from + filters.limit - 1;
-    query = query.range(from, to);
+    const page = filters.page || 1;
+    const limit = filters.limit || 20;
+    const offset = (page - 1) * limit;
     
-    const result = await query;
+    query = query.range(offset, offset + limit - 1);
+    
+    const result = await monitorSupabaseQuery(
+      query,
+      'products',
+      'select',
+      { teamId }
+    ) as { data: any[] | null; error: any | null };
     
     if (result.error) {
       throw new SupabaseError(
@@ -227,62 +235,71 @@ const getProductsWithCache = withCache(
       );
     }
     
-    // Get stock movements for all products
-    const productIds = (result.data || []).map(p => p.id);
-    const stockQuery = supabase
-       .from('stock_movements')
-       .select('product_id, quantity, movement_type, warehouses(id, name)')
-       .in('product_id', productIds)
-       .eq('team_id', teamId);
+    const products = result.data || [];
     
-    const stockResult = await stockQuery;
-    const stockMovements = stockResult.data || [];
+    // Get stock data for all products
+    const productIds = products.map(p => p.id);
     
-    // Calculate current stock for each product
-    const productsWithStock = (result.data || []).map(product => {
-      const productMovements = stockMovements.filter(m => m.product_id === product.id);
-      const currentStock = productMovements
-         .reduce((total, movement) => {
-           return movement.movement_type === 'in' 
-             ? total + movement.quantity 
-             : total - movement.quantity;
-         }, 0);
+    if (productIds.length > 0) {
+      const stockQuery = supabase
+        .from('stock_movements')
+        .select('product_id, quantity, movement_type')
+        .in('product_id', productIds)
+        .eq('team_id', teamId);
       
-      let stockStatus: 'in_stock' | 'low_stock' | 'out_of_stock' = 'in_stock';
-      if (currentStock === 0) {
-        stockStatus = 'out_of_stock';
-      } else if (currentStock <= (product.min_stock_level || 0)) {
-        stockStatus = 'low_stock';
+      const stockResult = await stockQuery;
+      const stockMovements = stockResult.data || [];
+      
+      // Calculate stock for each product
+      const stockByProduct = stockMovements.reduce((acc, movement) => {
+        if (movement.product_id) {
+          if (!acc[movement.product_id]) {
+            acc[movement.product_id] = 0;
+          }
+          acc[movement.product_id] += movement.movement_type === 'in' 
+            ? movement.quantity 
+            : -movement.quantity;
+        }
+        return acc;
+      }, {} as Record<string, number>);
+      
+      // Enrich products with stock data
+      const enrichedProducts = products.map(product => {
+        const currentStock = stockByProduct[product.id] || 0;
+        const stockValue = currentStock * (product.selling_price || 0);
+        
+        return {
+          ...product,
+          currentStock,
+          stockValue,
+          stockStatus: currentStock === 0 
+            ? 'out_of_stock' 
+            : currentStock <= (product.min_stock_level || 0) 
+              ? 'low_stock' 
+              : 'in_stock',
+        };
+      });
+      
+      // Apply stock status filter if specified
+      if (filters.stockStatus) {
+        return enrichedProducts.filter(p => p.stockStatus === filters.stockStatus);
       }
       
-      return {
-        ...product,
-        currentStock,
-        stockStatus,
-        stockValue: currentStock * (product.selling_price || 0),
-        stock_movements: productMovements,
-      };
-    });
+      return enrichedProducts;
+    }
     
-    // Apply stock status filter
-    const filteredProducts = filters.stockStatus === 'all' 
-      ? productsWithStock
-      : productsWithStock.filter(p => p.stockStatus === filters.stockStatus);
-    
-    return {
-      products: filteredProducts,
-      pagination: {
-        page: filters.page,
-        limit: filters.limit,
-        total: filteredProducts.length,
-        hasMore: filteredProducts.length === filters.limit,
-      },
-    };
+    return products.map(product => ({
+      ...product,
+      currentStock: 0,
+      stockValue: 0,
+      stockStatus: 'out_of_stock' as const,
+    }));
   },
-  (teamId, filters) => CacheKeys.productList(teamId, filters.page, JSON.stringify(filters)),
+  (teamId: string, filters: z.infer<typeof inventoryFiltersSchema>) => 
+    CacheKeys.productList(teamId, filters.page || 1, JSON.stringify(filters)),
   {
     ttl: 2 * 60 * 1000, // 2 minutes
-    tags: [CacheTags.teamInventory(teamId)],
+    tags: [CacheTags.inventory],
   }
 );
 
@@ -366,7 +383,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
           'products',
           'select',
           { teamId: input.teamId }
-        );
+        ) as { data: any | null; error: any | null };
         
         if (result.error) {
           throw new SupabaseError(
@@ -392,11 +409,9 @@ export const optimizedInventoryRouter = createTRPCRouter({
             id,
             quantity,
             movement_type,
-            unit_cost,
-            reference,
             notes,
             created_at,
-            warehouses(id, name, location)
+            warehouses(id, name, address)
           `)
           .eq('product_id', input.productId)
           .eq('team_id', input.teamId);
@@ -413,16 +428,15 @@ export const optimizedInventoryRouter = createTRPCRouter({
            }, 0);
         
         const stockValue = currentStock * (product.selling_price || 0);
-        const totalCost = stockMovements
-          .filter(m => m.movement_type === 'in' && m.unit_cost)
-          .reduce((total, m) => total + (m.unit_cost! * m.quantity), 0);
+        // Calculate total cost based on product cost price
+        const totalCost = currentStock * (product.cost_price || 0);
         
         const enrichedProduct = {
           ...product,
           currentStock,
           stockValue,
           totalCost,
-          averageCost: totalCost > 0 ? totalCost / currentStock : 0,
+          averageCost: product.cost_price || 0,
           stockStatus: currentStock === 0 
             ? 'out_of_stock' 
             : currentStock <= (product.min_stock_level || 0) 
@@ -465,7 +479,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
         const productData = {
           ...input.product,
           team_id: input.teamId,
-          created_by: ctx.user.id,
+          created_by: ctx.user.userId,
         };
         
         const result = await withRetry(async () => {
@@ -480,7 +494,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
             'products',
             'insert',
             { teamId: input.teamId }
-          );
+          ) as { data: any | null; error: any | null };
         });
         
         if (result.error) {
@@ -524,7 +538,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
         const productData = {
           ...updateData,
           updated_at: new Date().toISOString(),
-          updated_by: ctx.user.id,
+          updated_by: ctx.user.userId,
         };
         
         const result = await withRetry(async () => {
@@ -541,7 +555,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
             'products',
             'update',
             { teamId: input.teamId }
-          );
+          ) as { data: any | null; error: any | null };
         });
         
         if (result.error) {
@@ -608,7 +622,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
             'products',
             'delete',
             { teamId: input.teamId }
-          );
+          ) as { data: any | null; error: any | null };
         });
         
         if (result.error) {
@@ -653,7 +667,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
           const productData = {
             ...product,
             team_id: input.teamId,
-            created_by: ctx.user.id,
+            created_by: ctx.user.userId,
           };
           
           const query = supabase
@@ -667,7 +681,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
             'products',
             'insert',
             { teamId: input.teamId }
-          );
+          ) as { data: any | null; error: any | null };
         });
         
         const batchResult = await batchOperation(operations, {
@@ -710,9 +724,15 @@ export const optimizedInventoryRouter = createTRPCRouter({
         const supabase = getSupabaseClient();
         
         const movementData = {
-          ...input.movement,
+          movement_type: input.movement.type,
+          product_id: input.movement.productId,
+          warehouse_id: input.movement.warehouseId,
+          quantity: input.movement.quantity,
+          reference: input.movement.reference,
+          notes: input.movement.notes,
+          unit_cost: input.movement.unitCost,
           team_id: input.teamId,
-          created_by: ctx.user.id,
+          created_by: ctx.user.userId,
         };
         
         const result = await withRetry(async () => {
@@ -731,7 +751,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
             'stock_movements',
             'insert',
             { teamId: input.teamId }
-          );
+          ) as { data: any | null; error: any | null };
         });
         
         if (result.error) {
@@ -793,7 +813,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
           'stock_movements',
           'select',
           { teamId: input.teamId }
-        );
+        ) as { data: any[] | null; error: any | null };
         
         if (result.error) {
           throw new SupabaseError(

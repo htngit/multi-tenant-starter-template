@@ -93,11 +93,15 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const { supabase, response } = createMiddlewareClient(request)
 
-  // Skip middleware for static files and Next.js internals
+  // Skip middleware during build time or for special Next.js routes
   if (
+    process.env.NODE_ENV === 'development' && !process.env.NEXT_RUNTIME ||
+    process.env.NEXT_PHASE === 'phase-production-build' ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon.ico') ||
     pathname.startsWith('/assets') ||
+    pathname === '/_not-found' ||
+    pathname.startsWith('/_error') ||
     pathname.includes('.')
   ) {
     return response
@@ -122,6 +126,11 @@ export async function middleware(request: NextRequest) {
   )
 
   try {
+    // Skip Stack Auth during build time
+    if (process.env.NEXT_PHASE === 'phase-production-build') {
+      return response
+    }
+    
     // Debug logging for Stack Auth request context
     console.log('🔍 Middleware Debug - Request Analysis:', {
       pathname,
@@ -490,7 +499,9 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public folder
+     * - _not-found (Next.js not found page)
+     * - _error (Next.js error pages)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|_not-found|_error|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
