@@ -45,8 +45,8 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Get Stack Auth user context
-  const stackUser = useUser({ or: 'redirect' });
+  // Get Stack Auth user context - use 'return-null' to avoid redirect during development
+  const stackUser = useUser({ or: 'return-null' });
 
   useEffect(() => {
     /**
@@ -73,7 +73,7 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
         const { data: { user: supabaseUser }, error: userError } = await client.auth.getUser();
         
         if (userError && userError.message !== 'Invalid JWT') {
-          throw userError;
+          console.warn('Supabase auth error (non-critical):', userError.message);
         }
 
         setSupabase(client);
@@ -104,11 +104,9 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
       }
     };
 
-    if (stackUser) {
-      initializeSupabase();
-    } else {
-      setIsLoading(false);
-    }
+    // Initialize Supabase regardless of Stack Auth user status
+    // This allows the app to work even when Stack Auth is not fully configured
+    initializeSupabase();
   }, [stackUser]);
 
   /**
