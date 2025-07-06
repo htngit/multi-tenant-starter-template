@@ -21,7 +21,7 @@ import { authMonitor } from '@/lib/auth-monitoring'
  */
 async function getUserWithFallback(request: NextRequest): Promise<any> {
   try {
-    return await stackServerApp.getUser({ request })
+    return await stackServerApp.getUser()
   } catch (error: any) {
     // Log error with monitoring utility
     authMonitor.logAuthError(error, request, request.nextUrl.pathname)
@@ -153,17 +153,6 @@ export async function middleware(request: NextRequest) {
     console.log('🔍 Calling Stack Auth with fallback...')
     let user: any = null
     
-    // Validate request object structure for Stack Auth
-    if (!request || typeof request !== 'object') {
-      console.warn('⚠️ Invalid request object for Stack Auth');
-      if (isProtectedRoute) {
-        const loginUrl = new URL('/auth/sign-in', request.url)
-        loginUrl.searchParams.set('redirect', pathname)
-        return NextResponse.redirect(loginUrl)
-      }
-      return response
-    }
-
     // Check for required request properties
     if (!request.headers || !request.cookies) {
       console.warn('⚠️ Missing required request properties');

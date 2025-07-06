@@ -218,8 +218,7 @@ export const financialRouter = createTRPCRouter({
   /**
    * Create new invoice
    */
-  createInvoice: auditedProcedure
-    .use(financialWriteProcedure.middleware)
+  createInvoice: financialWriteProcedure
     .input(invoiceSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -294,8 +293,7 @@ export const financialRouter = createTRPCRouter({
   /**
    * Update invoice
    */
-  updateInvoice: auditedProcedure
-    .use(financialWriteProcedure.middleware)
+  updateInvoice: financialWriteProcedure
     .input(updateInvoiceSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -381,8 +379,7 @@ export const financialRouter = createTRPCRouter({
   /**
    * Delete invoice
    */
-  deleteInvoice: auditedProcedure
-    .use(financialDeleteProcedure.middleware)
+  deleteInvoice: financialDeleteProcedure
     .input(z.object({
       id: z.string().uuid('Invalid invoice ID'),
     }))
@@ -442,8 +439,7 @@ export const financialRouter = createTRPCRouter({
   /**
    * Create payment
    */
-  createPayment: auditedProcedure
-    .use(financialWriteProcedure.middleware)
+  createPayment: financialWriteProcedure
     .input(paymentSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -612,8 +608,7 @@ export const financialRouter = createTRPCRouter({
   /**
    * Create expense
    */
-  createExpense: auditedProcedure
-    .use(financialWriteProcedure.middleware)
+  createExpense: financialWriteProcedure
     .input(expenseSchema)
     .mutation(async ({ input, ctx }) => {
       try {

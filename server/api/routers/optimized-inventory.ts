@@ -10,10 +10,9 @@
 
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { createTRPCRouter, protectedProcedure } from '../trpc';
-import { createServerComponentClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createTRPCRouter, protectedProcedure } from '../../../lib/trpc';
 import { withRetry, SupabaseError, batchOperation } from '../../../lib/supabase';
+import { createRouteHandlerSupabaseClient } from '../../../lib/supabase-ssr';
 import { 
   UnifiedCache, 
   CacheKeys, 
@@ -35,7 +34,7 @@ const productCreateSchema = z.object({
   sku: z.string().min(1).max(100),
   categoryId: z.string().uuid().optional(),
   supplierId: z.string().uuid().optional(),
-  unitPrice: z.number().positive(),
+  sellingPrice: z.number().positive(),
   costPrice: z.number().positive(),
   minStockLevel: z.number().int().min(0).default(0),
   maxStockLevel: z.number().int().min(0).optional(),
@@ -85,8 +84,7 @@ const inventoryFiltersSchema = z.object({
 
 // Helper functions with caching
 const getSupabaseClient = () => {
-  const cookieStore = cookies();
-  return createServerComponentClient<Database>({ cookies: () => cookieStore });
+  return createRouteHandlerSupabaseClient();
 };
 
 /**
@@ -101,22 +99,13 @@ const getInventorySummaryWithCache = createCachedFunction(
       .select(`
         id,
         name,
-        unit_price,
-        stock_movements!inner(
-          quantity,
-          type,
-          warehouse_id
-        )
+        selling_price,
+        cost_price
       `)
       .eq('team_id', teamId)
       .eq('is_active', true);
     
-    const result = await monitorSupabaseQuery(
-      query,
-      'products',
-      'select',
-      { teamId }
-    );
+    const result = await query;
     
     if (result.error) {
       throw new SupabaseError(
@@ -134,16 +123,26 @@ const getInventorySummaryWithCache = createCachedFunction(
     let lowStockItems = 0;
     let outOfStockItems = 0;
     
+    // Get stock movements separately
+     const stockQuery = supabase
+       .from('stock_movements')
+       .select('product_id, quantity, movement_type')
+       .eq('team_id', teamId);
+    
+    const stockResult = await stockQuery;
+    const stockMovements = stockResult.data || [];
+    
     products.forEach(product => {
-      const currentStock = product.stock_movements
-        .reduce((total, movement) => {
-          return movement.type === 'in' 
-            ? total + movement.quantity 
-            : total - movement.quantity;
-        }, 0);
+      const productMovements = stockMovements.filter(m => m.product_id === product.id);
+      const currentStock = productMovements
+         .reduce((total, movement) => {
+           return movement.movement_type === 'in' 
+             ? total + movement.quantity 
+             : total - movement.quantity;
+         }, 0);
       
       totalItems += currentStock;
-      totalValue += currentStock * product.unit_price;
+      totalValue += currentStock * (product.selling_price || 0);
       
       if (currentStock === 0) {
         outOfStockItems++;
@@ -178,14 +177,7 @@ const getProductsWithCache = withCache(
       .select(`
         *,
         categories(id, name),
-        suppliers(id, name),
-        stock_movements(
-          id,
-          quantity,
-          type,
-          created_at,
-          warehouses(id, name)
-        )
+        suppliers(id, name)
       `)
       .eq('team_id', teamId);
     
@@ -208,15 +200,15 @@ const getProductsWithCache = withCache(
     
     if (filters.priceRange) {
       if (filters.priceRange.min) {
-        query = query.gte('unit_price', filters.priceRange.min);
+        query = query.gte('selling_price', filters.priceRange.min);
       }
       if (filters.priceRange.max) {
-        query = query.lte('unit_price', filters.priceRange.max);
+        query = query.lte('selling_price', filters.priceRange.max);
       }
     }
     
     // Apply sorting
-    const sortColumn = filters.sortBy === 'price' ? 'unit_price' : filters.sortBy;
+    const sortColumn = filters.sortBy === 'price' ? 'selling_price' : filters.sortBy;
     query = query.order(sortColumn, { ascending: filters.sortOrder === 'asc' });
     
     // Apply pagination
@@ -224,12 +216,7 @@ const getProductsWithCache = withCache(
     const to = from + filters.limit - 1;
     query = query.range(from, to);
     
-    const result = await monitorSupabaseQuery(
-      query,
-      'products',
-      'select',
-      { teamId }
-    );
+    const result = await query;
     
     if (result.error) {
       throw new SupabaseError(
@@ -240,19 +227,31 @@ const getProductsWithCache = withCache(
       );
     }
     
+    // Get stock movements for all products
+    const productIds = (result.data || []).map(p => p.id);
+    const stockQuery = supabase
+       .from('stock_movements')
+       .select('product_id, quantity, movement_type, warehouses(id, name)')
+       .in('product_id', productIds)
+       .eq('team_id', teamId);
+    
+    const stockResult = await stockQuery;
+    const stockMovements = stockResult.data || [];
+    
     // Calculate current stock for each product
     const productsWithStock = (result.data || []).map(product => {
-      const currentStock = product.stock_movements
-        .reduce((total, movement) => {
-          return movement.type === 'in' 
-            ? total + movement.quantity 
-            : total - movement.quantity;
-        }, 0);
+      const productMovements = stockMovements.filter(m => m.product_id === product.id);
+      const currentStock = productMovements
+         .reduce((total, movement) => {
+           return movement.movement_type === 'in' 
+             ? total + movement.quantity 
+             : total - movement.quantity;
+         }, 0);
       
       let stockStatus: 'in_stock' | 'low_stock' | 'out_of_stock' = 'in_stock';
       if (currentStock === 0) {
         stockStatus = 'out_of_stock';
-      } else if (currentStock <= product.min_stock_level) {
+      } else if (currentStock <= (product.min_stock_level || 0)) {
         stockStatus = 'low_stock';
       }
       
@@ -260,7 +259,8 @@ const getProductsWithCache = withCache(
         ...product,
         currentStock,
         stockStatus,
-        stockValue: currentStock * product.unit_price,
+        stockValue: currentStock * (product.selling_price || 0),
+        stock_movements: productMovements,
       };
     });
     
@@ -355,17 +355,7 @@ export const optimizedInventoryRouter = createTRPCRouter({
           .select(`
             *,
             categories(id, name),
-            suppliers(id, name, contact_email, contact_phone),
-            stock_movements(
-              id,
-              quantity,
-              type,
-              unit_cost,
-              reference,
-              notes,
-              created_at,
-              warehouses(id, name, location)
-            )
+            suppliers(id, name, contact_email, contact_phone)
           `)
           .eq('id', input.productId)
           .eq('team_id', input.teamId)
@@ -395,17 +385,36 @@ export const optimizedInventoryRouter = createTRPCRouter({
           });
         }
         
-        // Calculate current stock and movements summary
-        const currentStock = product.stock_movements
-          .reduce((total, movement) => {
-            return movement.type === 'in' 
-              ? total + movement.quantity 
-              : total - movement.quantity;
-          }, 0);
+        // Get stock movements for this product
+        const stockQuery = supabase
+          .from('stock_movements')
+          .select(`
+            id,
+            quantity,
+            movement_type,
+            unit_cost,
+            reference,
+            notes,
+            created_at,
+            warehouses(id, name, location)
+          `)
+          .eq('product_id', input.productId)
+          .eq('team_id', input.teamId);
         
-        const stockValue = currentStock * product.unit_price;
-        const totalCost = product.stock_movements
-          .filter(m => m.type === 'in' && m.unit_cost)
+        const stockResult = await stockQuery;
+        const stockMovements = stockResult.data || [];
+        
+        // Calculate current stock and movements summary
+        const currentStock = stockMovements
+           .reduce((total, movement) => {
+             return movement.movement_type === 'in' 
+               ? total + movement.quantity 
+               : total - movement.quantity;
+           }, 0);
+        
+        const stockValue = currentStock * (product.selling_price || 0);
+        const totalCost = stockMovements
+          .filter(m => m.movement_type === 'in' && m.unit_cost)
           .reduce((total, m) => total + (m.unit_cost! * m.quantity), 0);
         
         const enrichedProduct = {
@@ -416,9 +425,10 @@ export const optimizedInventoryRouter = createTRPCRouter({
           averageCost: totalCost > 0 ? totalCost / currentStock : 0,
           stockStatus: currentStock === 0 
             ? 'out_of_stock' 
-            : currentStock <= product.min_stock_level 
+            : currentStock <= (product.min_stock_level || 0) 
               ? 'low_stock' 
               : 'in_stock',
+          stock_movements: stockMovements,
         };
         
         // Cache the result

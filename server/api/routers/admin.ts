@@ -182,8 +182,7 @@ export const adminRouter = createTRPCRouter({
   /**
    * Update system configuration
    */
-  updateSystemConfig: auditedProcedure
-    .use(systemAdminProcedure.middleware)
+  updateSystemConfig: systemAdminProcedure
     .input(systemConfigSchema.extend({
       id: z.string().uuid().optional(),
     }))
@@ -348,8 +347,7 @@ export const adminRouter = createTRPCRouter({
   /**
    * Manage user account
    */
-  manageUser: auditedProcedure
-    .use(userAdminProcedure.middleware)
+  manageUser: userAdminProcedure
     .input(userManagementSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -501,8 +499,7 @@ export const adminRouter = createTRPCRouter({
   /**
    * Manage tenant
    */
-  manageTenant: auditedProcedure
-    .use(tenantAdminProcedure.middleware)
+  manageTenant: tenantAdminProcedure
     .input(tenantManagementSchema)
     .mutation(async ({ input, ctx }) => {
       try {

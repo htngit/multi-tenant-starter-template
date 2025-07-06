@@ -196,8 +196,7 @@ export const inventoryRouter = createTRPCRouter({
   /**
    * Create new product
    */
-  createProduct: auditedProcedure
-    .use(inventoryWriteProcedure.middleware)
+  createProduct: inventoryWriteProcedure
     .input(productSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -260,8 +259,7 @@ export const inventoryRouter = createTRPCRouter({
   /**
    * Update product
    */
-  updateProduct: auditedProcedure
-    .use(inventoryWriteProcedure.middleware)
+  updateProduct: inventoryWriteProcedure
     .input(updateProductSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -333,8 +331,7 @@ export const inventoryRouter = createTRPCRouter({
   /**
    * Delete product
    */
-  deleteProduct: auditedProcedure
-    .use(inventoryDeleteProcedure.middleware)
+  deleteProduct: inventoryDeleteProcedure
     .input(z.object({
       id: z.string().uuid('Invalid product ID'),
     }))
@@ -387,8 +384,7 @@ export const inventoryRouter = createTRPCRouter({
   /**
    * Create stock movement
    */
-  createStockMovement: auditedProcedure
-    .use(inventoryWriteProcedure.middleware)
+  createStockMovement: inventoryWriteProcedure
     .input(stockMovementSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -601,8 +597,7 @@ export const inventoryRouter = createTRPCRouter({
   /**
    * Create product category
    */
-  createCategory: auditedProcedure
-    .use(inventoryWriteProcedure.middleware)
+  createCategory: inventoryWriteProcedure
     .input(categorySchema)
     .mutation(async ({ input, ctx }) => {
       try {

@@ -123,8 +123,7 @@ export const tenantRouter = createTRPCRouter({
   /**
    * Update tenant profile
    */
-  updateProfile: auditedProcedure
-    .use(tenantWriteProcedure.middleware)
+  updateProfile: tenantWriteProcedure
     .input(tenantProfileSchema.partial())
     .mutation(async ({ input, ctx }) => {
       try {
@@ -230,8 +229,7 @@ export const tenantRouter = createTRPCRouter({
   /**
    * Update tenant settings
    */
-  updateSettings: auditedProcedure
-    .use(tenantWriteProcedure.middleware)
+  updateSettings: tenantWriteProcedure
     .input(tenantSettingsSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -359,8 +357,7 @@ export const tenantRouter = createTRPCRouter({
   /**
    * Add tenant address
    */
-  addAddress: auditedProcedure
-    .use(tenantWriteProcedure.middleware)
+  addAddress: tenantWriteProcedure
     .input(tenantAddressSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -405,8 +402,7 @@ export const tenantRouter = createTRPCRouter({
   /**
    * Update tenant address
    */
-  updateAddress: auditedProcedure
-    .use(tenantWriteProcedure.middleware)
+  updateAddress: tenantWriteProcedure
     .input(tenantAddressSchema.partial().extend({
       id: z.string().uuid('Invalid address ID'),
     }))
@@ -457,8 +453,7 @@ export const tenantRouter = createTRPCRouter({
   /**
    * Delete tenant address
    */
-  deleteAddress: auditedProcedure
-    .use(tenantWriteProcedure.middleware)
+  deleteAddress: tenantWriteProcedure
     .input(z.object({
       id: z.string().uuid('Invalid address ID'),
     }))
@@ -525,8 +520,7 @@ export const tenantRouter = createTRPCRouter({
   /**
    * Add tenant contact
    */
-  addContact: auditedProcedure
-    .use(tenantWriteProcedure.middleware)
+  addContact: tenantWriteProcedure
     .input(tenantContactSchema)
     .mutation(async ({ input, ctx }) => {
       try {

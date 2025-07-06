@@ -351,8 +351,7 @@ export const usersRouter = createTRPCRouter({
   /**
    * Invite new user
    */
-  invite: auditedProcedure
-    .use(userInviteProcedure.middleware)
+  invite: userInviteProcedure
     .input(userInviteSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -439,8 +438,7 @@ export const usersRouter = createTRPCRouter({
   /**
    * Update user
    */
-  update: auditedProcedure
-    .use(userWriteProcedure.middleware)
+  update: userWriteProcedure
     .input(userUpdateSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -556,8 +554,7 @@ export const usersRouter = createTRPCRouter({
   /**
    * Deactivate user
    */
-  deactivate: auditedProcedure
-    .use(userWriteProcedure.middleware)
+  deactivate: userWriteProcedure
     .input(z.object({
       userId: z.string().uuid('Invalid user ID'),
       reason: z.string().optional(),
@@ -610,8 +607,7 @@ export const usersRouter = createTRPCRouter({
   /**
    * Reactivate user
    */
-  reactivate: auditedProcedure
-    .use(userWriteProcedure.middleware)
+  reactivate: userWriteProcedure
     .input(z.object({
       userId: z.string().uuid('Invalid user ID'),
     }))

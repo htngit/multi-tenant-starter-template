@@ -92,8 +92,8 @@ export const authRouter = createTRPCRouter({
           }
         }
 
-        const permissions = await getUserPermissions(userContext)
-        const roles = await getUserRoles(userContext)
+        const permissions = await getUserPermissions(userContext.userId, userContext.tenantId || '')
+        const roles = await getUserRoles(userContext.userId, userContext.tenantId || '')
 
         return {
           user: userContext,
@@ -321,7 +321,7 @@ export const authRouter = createTRPCRouter({
         }
 
         // Switch tenant context
-        const newContext = await switchTenant(ctx.user, tenantId)
+        const newContext = await switchTenant(tenantId)
         
         // Log tenant switch
         await ctx.supabase.from('auth_logs').insert({
@@ -376,13 +376,13 @@ export const authRouter = createTRPCRouter({
           .eq('user_id', ctx.user.userId)
           .eq('status', 'active')
 
-        return tenants?.map(t => ({
+        return tenants?.map((t: any) => ({
           id: t.tenant_id,
-          name: t.tenants.name,
-          slug: t.tenants.slug,
-          logoUrl: t.tenants.logo_url,
+          name: t.tenants?.name,
+          slug: t.tenants?.slug,
+          logoUrl: t.tenants?.logo_url,
           role: t.role,
-          status: t.tenants.status,
+          status: t.tenants?.status,
           isCurrent: t.tenant_id === ctx.user.tenantId,
         })) || []
       } catch (error) {

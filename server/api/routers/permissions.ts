@@ -316,8 +316,7 @@ export const permissionsRouter = createTRPCRouter({
   /**
    * Create new role
    */
-  createRole: auditedProcedure
-    .use(roleWriteProcedure.middleware)
+  createRole: roleWriteProcedure
     .input(roleSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -410,8 +409,7 @@ export const permissionsRouter = createTRPCRouter({
   /**
    * Update role
    */
-  updateRole: auditedProcedure
-    .use(roleWriteProcedure.middleware)
+  updateRole: roleWriteProcedure
     .input(updateRoleSchema)
     .mutation(async ({ input, ctx }) => {
       try {
@@ -534,8 +532,7 @@ export const permissionsRouter = createTRPCRouter({
   /**
    * Delete role
    */
-  deleteRole: auditedProcedure
-    .use(roleWriteProcedure.middleware)
+  deleteRole: roleWriteProcedure
     .input(z.object({
       roleId: z.string().uuid('Invalid role ID'),
       transferUsersToRoleId: z.string().uuid('Invalid transfer role ID').optional(),
@@ -654,8 +651,7 @@ export const permissionsRouter = createTRPCRouter({
   /**
    * Assign roles to user
    */
-  assignRoles: auditedProcedure
-    .use(roleWriteProcedure.middleware)
+  assignRoles: roleWriteProcedure
     .input(assignRoleSchema)
     .mutation(async ({ input, ctx }) => {
       try {

@@ -21,8 +21,8 @@ const CONCURRENT_REQUESTS = 10;
 
 // Initialize clients
 const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
-const cache = new UnifiedCache();
-const monitor = new PerformanceMonitor();
+// UnifiedCache uses static methods, no need to instantiate
+const monitor = PerformanceMonitor.getInstance();
 
 interface TestResult {
   testName: string;
@@ -98,23 +98,23 @@ class PerformanceTester {
     
     // Test cache write
     const writeStart = performance.now();
-    await cache.set(cacheKey, testData, 60000);
+    UnifiedCache.set(cacheKey, testData, { ttl: 60000 });
     const writeTime = performance.now() - writeStart;
     
     // Test cache read (hit)
     const readStart = performance.now();
-    const cachedData = await cache.get(cacheKey);
+    const cachedData = UnifiedCache.get(cacheKey);
     const readTime = performance.now() - readStart;
     
     // Test cache miss
     const missStart = performance.now();
-    const missData = await cache.get('non-existent-key');
+    const missData = UnifiedCache.get('non-existent-key');
     const missTime = performance.now() - missStart;
     
     // Test multiple concurrent reads
     const concurrentStart = performance.now();
     await Promise.all(
-      Array.from({ length: 50 }, () => cache.get(cacheKey))
+      Array.from({ length: 50 }, () => UnifiedCache.get(cacheKey))
     );
     const concurrentTime = performance.now() - concurrentStart;
     
@@ -190,7 +190,7 @@ class PerformanceTester {
         .on('postgres_changes', 
           { event: '*', schema: 'public', table: 'products' },
           (payload) => {
-            const latency = Date.now() - payload.commit_timestamp;
+            const latency = Date.now() - new Date(payload.commit_timestamp).getTime();
             latencies.push(latency);
             messageCount++;
             
@@ -246,7 +246,7 @@ class PerformanceTester {
       await supabase
         .from('products')
         .update({ updated_at: new Date().toISOString() })
-        .eq('id', 1); // Assuming product with ID 1 exists
+        .eq('id', '1'); // Assuming product with ID 1 exists
     }
   }
 
@@ -266,7 +266,7 @@ class PerformanceTester {
           supabase
             .from('products')
             .select('id, name')
-            .eq('id', j + 1)
+            .eq('id', (j + 1).toString())
         );
         
         await Promise.all(operations);
@@ -304,13 +304,14 @@ class PerformanceTester {
         // Test retry logic with intentionally failing query
         await withRetry(async () => {
           retryCount++;
+          // Test with invalid query to trigger error handling
           const { data, error } = await supabase
-            .from('non_existent_table')
-            .select('*');
+            .from('products')
+            .select('invalid_column');
             
           if (error) throw new Error(error.message);
           return data;
-        }, 3, 1000);
+        }, { maxAttempts: 3, baseDelay: 1000 });
         
         const end = performance.now();
         times.push(end - start);
