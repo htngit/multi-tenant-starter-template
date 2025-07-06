@@ -5,6 +5,9 @@ import { stackServerApp } from "@/stack";
 import { GitHubLogoIcon } from "@radix-ui/react-icons";
 import { ComponentIcon, Users } from "lucide-react";
 
+// Force dynamic rendering to prevent build-time errors with Stack Auth
+export const dynamic = 'force-dynamic';
+
 export default async function LandingPage() {
   const project = await stackServerApp.getProject();
   if (!project.config.clientTeamCreationEnabled) {

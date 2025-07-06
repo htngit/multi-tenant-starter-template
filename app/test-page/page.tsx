@@ -1,5 +1,8 @@
 import { Metadata } from "next";
 
+// Force dynamic rendering to prevent build-time errors
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: "Test Page",
   description: "Test description",
