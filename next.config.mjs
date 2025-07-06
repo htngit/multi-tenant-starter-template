@@ -10,6 +10,21 @@ const nextConfig = {
   },
   // Server external packages for Stack Auth
   serverExternalPackages: ['@stackframe/stack'],
+  // Webpack configuration to handle extensionless imports
+  webpack: (config, { isServer }) => {
+    // Add .js extension resolution for ES modules
+    config.resolve.extensionAlias = {
+      '.js': ['.js', '.ts', '.tsx'],
+      '.mjs': ['.mjs', '.js'],
+    };
+    
+    // Ensure proper module resolution for Stack Auth packages
+    config.resolve.alias = {
+      ...config.resolve.alias,
+    };
+    
+    return config;
+  },
 };
 
 export default nextConfig;
