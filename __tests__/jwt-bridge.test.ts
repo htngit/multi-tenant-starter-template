@@ -344,7 +344,7 @@ describe('JWT Token Bridge', () => {
       
       // Verify that full JWT is not logged
       const logCalls = consoleSpy.mock.calls.flat();
-      logCalls.forEach(call => {
+      logCalls.forEach((call: unknown) => {
         if (typeof call === 'string') {
           expect(call).not.toContain(mockStackAuthJWT);
         }
