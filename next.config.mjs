@@ -8,8 +8,7 @@ const nextConfig = {
   generateBuildId: async () => {
     return 'dynamic-' + Date.now();
   },
-  // Server external packages for Stack Auth
-  serverExternalPackages: ['@stackframe/stack'],
+  // Removed serverExternalPackages to fix Stack Auth module resolution
   // Webpack configuration to handle extensionless imports
   webpack: (config, { isServer }) => {
     // Add .js extension resolution for ES modules

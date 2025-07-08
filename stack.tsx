@@ -1,10 +1,4 @@
 import "server-only";
 
-import { StackServerApp } from "@stackframe/stack";
-
-export const stackServerApp = new StackServerApp({
-  tokenStore: "nextjs-cookie",
-  urls: {
-    afterSignIn: "/dashboard",
-  }
-});
+// Import the existing Stack Auth configuration to avoid duplicate app instances
+export { stackServerApp } from "./lib/stack-auth";

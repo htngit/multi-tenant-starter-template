@@ -7,7 +7,7 @@ import { httpBatchLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { useState } from 'react';
 import superjson from 'superjson';
-import { SupabaseProvider } from '@/components/providers/supabase-provider';
+// SupabaseProvider moved to (main)/layout.tsx to handle Suspense boundaries properly
 import type { AppRouter } from '@/server/api/root';
 
 /**
@@ -100,22 +100,20 @@ export function Provider(props: { children?: React.ReactNode }) {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <SupabaseProvider>
-          <ThemeProvider 
-            attribute="class" 
-            defaultTheme="system" 
-            enableSystem
-            disableTransitionOnChange
-          >
-            {props.children}
-            {/* Development tools - only in development */}
-            {process.env.NODE_ENV === 'development' && (
-              <ReactQueryDevtools 
-                initialIsOpen={false}
-              />
-            )}
-          </ThemeProvider>
-        </SupabaseProvider>
+        <ThemeProvider 
+          attribute="class" 
+          defaultTheme="system" 
+          enableSystem
+          disableTransitionOnChange
+        >
+          {props.children}
+          {/* Development tools - only in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <ReactQueryDevtools 
+              initialIsOpen={false}
+            />
+          )}
+        </ThemeProvider>
       </QueryClientProvider>
     </trpc.Provider>
   );

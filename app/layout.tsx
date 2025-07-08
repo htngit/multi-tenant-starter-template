@@ -4,8 +4,6 @@ import { StackProvider, StackTheme } from "@stackframe/stack";
 import { stackServerApp } from "../stack";
 import "./globals.css";
 import { Provider } from "./provider";
-import { Toaster } from "@/components/ui/sonner";
-import { PerformanceMonitorWrapper } from "@/components/debug/performance-monitor-wrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -14,6 +12,10 @@ export const metadata: Metadata = {
   description: "A Multi-tenant Next.js Starter Template",
 };
 
+/**
+ * Root Layout - Contains only essential providers that don't require Suspense boundaries
+ * Components that use Stack Auth hooks are moved to the (main) layout
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -26,8 +28,6 @@ export default function RootLayout({
           <StackTheme>
             <Provider>
               {children}
-              <Toaster />
-              <PerformanceMonitorWrapper />
             </Provider>
           </StackTheme>
         </StackProvider>
