@@ -75,8 +75,8 @@ module.exports = async () => {
     // Initialize test database connections
     global.testDb = {
       // Mock database connection for testing
-      query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
-      close: jest.fn().mockResolvedValue(undefined),
+      query: () => Promise.resolve({ rows: [], rowCount: 0 }),
+      close: () => Promise.resolve(undefined),
     };
     
     // Initialize test cache

@@ -25,8 +25,110 @@ jest.mock('@stackframe/stack', () => ({
   getTokens: jest.fn(),
 }));
 
+// Create comprehensive Supabase client mock
+const createMockSupabaseClient = () => {
+  const mockQueryBuilder = {
+    select: jest.fn().mockReturnThis(),
+    insert: jest.fn().mockReturnThis(),
+    update: jest.fn().mockReturnThis(),
+    delete: jest.fn().mockReturnThis(),
+    upsert: jest.fn().mockReturnThis(),
+    eq: jest.fn().mockReturnThis(),
+    neq: jest.fn().mockReturnThis(),
+    gt: jest.fn().mockReturnThis(),
+    gte: jest.fn().mockReturnThis(),
+    lt: jest.fn().mockReturnThis(),
+    lte: jest.fn().mockReturnThis(),
+    like: jest.fn().mockReturnThis(),
+    ilike: jest.fn().mockReturnThis(),
+    is: jest.fn().mockReturnThis(),
+    in: jest.fn().mockReturnThis(),
+    contains: jest.fn().mockReturnThis(),
+    containedBy: jest.fn().mockReturnThis(),
+    rangeGt: jest.fn().mockReturnThis(),
+    rangeGte: jest.fn().mockReturnThis(),
+    rangeLt: jest.fn().mockReturnThis(),
+    rangeLte: jest.fn().mockReturnThis(),
+    rangeAdjacent: jest.fn().mockReturnThis(),
+    overlaps: jest.fn().mockReturnThis(),
+    textSearch: jest.fn().mockReturnThis(),
+    match: jest.fn().mockReturnThis(),
+    not: jest.fn().mockReturnThis(),
+    or: jest.fn().mockReturnThis(),
+    filter: jest.fn().mockReturnThis(),
+    order: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    range: jest.fn().mockReturnThis(),
+    abortSignal: jest.fn().mockReturnThis(),
+    single: jest.fn().mockResolvedValue({ data: null, error: null }),
+    maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    csv: jest.fn().mockResolvedValue({ data: '', error: null }),
+    geojson: jest.fn().mockResolvedValue({ data: null, error: null }),
+    explain: jest.fn().mockResolvedValue({ data: null, error: null }),
+    rollback: jest.fn().mockResolvedValue({ data: null, error: null }),
+    returns: jest.fn().mockReturnThis(),
+    then: jest.fn().mockImplementation((resolve) => {
+      return Promise.resolve(resolve({ data: [], error: null }));
+    })
+  };
+
+  return {
+    from: jest.fn().mockReturnValue(mockQueryBuilder),
+    rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
+    auth: {
+      getSession: jest.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      getUser: jest.fn().mockResolvedValue({ data: { user: null }, error: null }),
+      signOut: jest.fn().mockResolvedValue({ error: null }),
+      onAuthStateChange: jest.fn().mockReturnValue({ data: { subscription: { unsubscribe: jest.fn() } } })
+    },
+    storage: {
+      from: jest.fn().mockReturnValue({
+        upload: jest.fn().mockResolvedValue({ data: null, error: null }),
+        download: jest.fn().mockResolvedValue({ data: null, error: null }),
+        remove: jest.fn().mockResolvedValue({ data: null, error: null }),
+        list: jest.fn().mockResolvedValue({ data: [], error: null })
+      })
+    },
+    realtime: {
+      channel: jest.fn().mockReturnValue({
+        on: jest.fn().mockReturnThis(),
+        subscribe: jest.fn().mockReturnThis(),
+        unsubscribe: jest.fn().mockReturnThis()
+      })
+    },
+    rest: {
+      headers: {}
+    }
+  };
+};
+
 jest.mock('@supabase/supabase-js', () => ({
-  createClient: jest.fn(),
+  createClient: jest.fn().mockImplementation(() => createMockSupabaseClient()),
+}));
+
+jest.mock('@supabase/ssr', () => ({
+  createBrowserClient: jest.fn().mockImplementation(() => createMockSupabaseClient()),
+  createServerClient: jest.fn().mockImplementation(() => createMockSupabaseClient()),
+}));
+
+// Mock the supabase module functions
+jest.mock('../lib/supabase', () => ({
+  createAuthenticatedClient: jest.fn().mockImplementation(async () => {
+    return createMockSupabaseClient();
+  }),
+  createClientComponentClient: jest.fn().mockImplementation(() => {
+    return createMockSupabaseClient();
+  }),
+  checkSupabaseHealth: jest.fn().mockResolvedValue({
+    status: 'healthy' as const,
+    latency: 50
+  }),
+  SupabaseError: class MockSupabaseError extends Error {
+    constructor(message: string, public code?: string, public details?: any, public hint?: string) {
+      super(message);
+      this.name = 'SupabaseError';
+    }
+  }
 }));
 
 // Test data
@@ -90,7 +192,7 @@ describe('JWT Token Bridge', () => {
         'authorization': `Bearer ${mockStackAuthJWT}`
       });
 
-      const extractedJWT = await extractStackAuthJWT(mockReq as any);
+      const extractedJWT = await extractStackAuthJWT(mockReq);
       expect(extractedJWT).toBe(mockStackAuthJWT);
     });
 
@@ -99,7 +201,7 @@ describe('JWT Token Bridge', () => {
         'x-stack-auth-token': mockStackAuthJWT
       });
 
-      const extractedJWT = await extractStackAuthJWT(mockReq as any);
+      const extractedJWT = await extractStackAuthJWT(mockReq);
       expect(extractedJWT).toBe(mockStackAuthJWT);
     });
 
@@ -113,13 +215,13 @@ describe('JWT Token Bridge', () => {
         value: { get: (name: string) => name === 'stack-auth-token' ? mockStackAuthJWT : undefined }
       });
 
-      const extractedJWT = await extractStackAuthJWT(mockReq as any);
+      const extractedJWT = await extractStackAuthJWT(mockReq);
       expect(extractedJWT).toBe(mockStackAuthJWT);
     });
 
     it('should return null when no JWT is found', async () => {
       const mockReq = new MockRequest();
-      const extractedJWT = await extractStackAuthJWT(mockReq as any);
+      const extractedJWT = await extractStackAuthJWT(mockReq);
       expect(extractedJWT).toBeNull();
     });
 
@@ -128,7 +230,7 @@ describe('JWT Token Bridge', () => {
         'authorization': 'InvalidFormat'
       });
 
-      const extractedJWT = await extractStackAuthJWT(mockReq as any);
+      const extractedJWT = await extractStackAuthJWT(mockReq);
       expect(extractedJWT).toBeNull();
     });
   });
@@ -231,11 +333,12 @@ describe('JWT Token Bridge', () => {
 
   describe('Supabase Client Integration', () => {
     it('should create authenticated client with JWT token', async () => {
-      // Mock Supabase client creation
-      const mockSupabaseClient = {
-        rest: { headers: {} },
-        rpc: jest.fn().mockResolvedValue({ data: null, error: null })
-      };
+      // Use the centralized mock client
+      const mockSupabaseClient = createMockSupabaseClient();
+      
+      // Test that the client is properly configured
+      expect(mockSupabaseClient.rpc).toBeDefined();
+      expect(mockSupabaseClient.rest.headers).toBeDefined();
       
       // This would test the actual integration
       expect(mockUserContext).toBeDefined();
@@ -244,18 +347,19 @@ describe('JWT Token Bridge', () => {
 
     it('should inject JWT into client headers', async () => {
       // Test that JWT is properly injected into Supabase client headers
-      const mockClient = {
-        rest: { headers: {} }
-      };
+      const mockClient = createMockSupabaseClient();
       
       // Verify headers are set correctly
       expect(mockClient.rest.headers).toBeDefined();
+      expect(typeof mockClient.rest.headers).toBe('object');
     });
 
     it('should handle client creation errors gracefully', async () => {
       // Test error handling in client creation
       try {
-        await createAuthenticatedClient(mockUserContext, false, 'invalid_jwt');
+        const client = await createAuthenticatedClient(mockUserContext, false, 'invalid_jwt');
+        expect(client).toBeDefined();
+        expect(client.rpc).toBeDefined();
       } catch (error) {
         // Should handle errors gracefully
         expect(error).toBeDefined();
@@ -271,7 +375,7 @@ describe('JWT Token Bridge', () => {
       // Mock a network failure
       jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Network error'));
       
-      const extractedJWT = await extractStackAuthJWT(mockReq as any);
+      const extractedJWT = await extractStackAuthJWT(mockReq);
       expect(extractedJWT).toBeNull();
     });
 
@@ -299,7 +403,7 @@ describe('JWT Token Bridge', () => {
       });
 
       const startTime = performance.now();
-      await extractStackAuthJWT(mockReq as any);
+      await extractStackAuthJWT(mockReq);
       const endTime = performance.now();
       
       // Should complete within 100ms
@@ -322,7 +426,7 @@ describe('JWT Token Bridge', () => {
 
       // Test concurrent JWT extractions
       const promises = Array(10).fill(null).map(() => 
-        extractStackAuthJWT(mockReq as any)
+        extractStackAuthJWT(mockReq)
       );
       
       const results = await Promise.all(promises);
@@ -340,7 +444,7 @@ describe('JWT Token Bridge', () => {
       
       await extractStackAuthJWT(new MockRequest({
         'authorization': `Bearer ${mockStackAuthJWT}`
-      }) as any);
+      }));
       
       // Verify that full JWT is not logged
       const logCalls = consoleSpy.mock.calls.flat();

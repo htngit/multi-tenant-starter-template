@@ -9,7 +9,7 @@
  */
 
 // Import Jest DOM matchers
-import '@testing-library/jest-dom';
+require('@testing-library/jest-dom');
 
 // Global test configuration
 global.console = {
@@ -314,8 +314,8 @@ global.testUtils = {
   },
 };
 
-// Setup fake timers
-jest.useFakeTimers();
+// Setup fake timers (commented out due to jsdom conflict)
+// jest.useFakeTimers();
 
 // Global beforeEach for all tests
 beforeEach(() => {
