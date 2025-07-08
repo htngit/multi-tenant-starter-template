@@ -7,6 +7,8 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
+    "test": "jest",
+    "test:watch": "jest --watch",
     "test:auth-fix": "tsx scripts/test-auth-fix.ts"
   },
   "dependencies": {
@@ -48,13 +50,18 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.12",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "^15.1.7",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "ts-jest": "^29.1.2",
     "typescript": "^5"
   }
 }
