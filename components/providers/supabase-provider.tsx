@@ -5,6 +5,8 @@ import { createBrowserClient } from '@supabase/ssr';
 import { SupabaseClient, User } from '@supabase/supabase-js';
 import { useUser } from '@stackframe/stack';
 import { Database } from '@/lib/database.types';
+import { extractStackAuthJWT, validateStackAuthJWT, createSupabaseCompatibleJWT, getJWTFromCache } from '@/lib/jwt-utils';
+import { createAuthenticatedClient } from '@/lib/supabase';
 
 /**
  * Supabase Provider integrated with Stack Auth
@@ -17,6 +19,8 @@ interface SupabaseContextType {
   user: User | null;
   isLoading: boolean;
   error: string | null;
+  jwtToken: string | null;
+  isJWTBridgeActive: boolean;
 }
 
 const SupabaseContext = createContext<SupabaseContextType>({
@@ -24,6 +28,8 @@ const SupabaseContext = createContext<SupabaseContextType>({
   user: null,
   isLoading: true,
   error: null,
+  jwtToken: null,
+  isJWTBridgeActive: false
 });
 
 interface SupabaseProviderProps {
@@ -44,32 +50,89 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [jwtToken, setJwtToken] = useState<string | null>(null);
+  const [isJWTBridgeActive, setIsJWTBridgeActive] = useState(false);
   
   // Get Stack Auth user context - use 'return-null' to avoid redirect during development
   const stackUser = useUser({ or: 'return-null' });
 
   useEffect(() => {
     /**
-     * Initialize Supabase client with Stack Auth session
-     * This ensures all Supabase requests are authenticated
+     * Initialize Supabase client with Stack Auth JWT Token Bridge
+     * This ensures all Supabase requests are authenticated with Stack Auth tokens
      */
     const initializeSupabase = async () => {
       try {
         setIsLoading(true);
         setError(null);
+        setIsJWTBridgeActive(false);
 
-        // Create Supabase client
-        const client = createBrowserClient<Database>(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
+        let client: SupabaseClient<Database>;
+        let extractedJWT: string | null = null;
 
-        // Note: Stack Auth integration with Supabase would require
-        // custom token exchange implementation. For now, we'll use
-        // Supabase's own auth or implement a proper token bridge.
-        // TODO: Implement proper Stack Auth <-> Supabase token exchange
+        // JWT Token Bridge Implementation
+        if (stackUser) {
+          try {
+            // Extract JWT token from Stack Auth (client-side, no request parameter needed)
+            extractedJWT = await extractStackAuthJWT();
+            
+            if (extractedJWT) {
+              // Validate the JWT token
+              const validatedClaims = await validateStackAuthJWT(extractedJWT);
+              
+              if (validatedClaims) {
+                // Create authenticated Supabase client with JWT bridge
+                const userContext = {
+                  userId: stackUser.id,
+                  tenantId: stackUser.selectedTeam?.id || validatedClaims.org_id || validatedClaims.team_id || 'default',
+                  roles: validatedClaims.roles || [],
 
-        // Get current user from Supabase
+                };
+                
+                client = await createAuthenticatedClient({
+                  ...userContext,
+                  permissions: validatedClaims.permissions || []
+                }, false, extractedJWT) as SupabaseClient<Database>;
+                setJwtToken(extractedJWT);
+                setIsJWTBridgeActive(true);
+                
+                console.log('✅ JWT Token Bridge activated successfully', {
+                  userId: userContext.userId,
+                  tenantId: userContext.tenantId,
+                  rolesCount: userContext.roles.length,
+                  permissionsCount: validatedClaims.permissions?.length || 0
+                });
+              } else {
+                console.warn('⚠️ Invalid JWT token, falling back to standard client');
+                client = createBrowserClient<Database>(
+                  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+                );
+              }
+            } else {
+              console.warn('⚠️ No JWT token found, using standard client');
+              client = createBrowserClient<Database>(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+              );
+            }
+          } catch (jwtError) {
+            console.error('❌ JWT Token Bridge error:', jwtError);
+            // Graceful fallback to standard client
+            client = createBrowserClient<Database>(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+            );
+          }
+        } else {
+          // No Stack Auth user - use standard client
+          client = createBrowserClient<Database>(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+          );
+        }
+
+        // Get current user from Supabase (may be null for JWT-only auth)
         const { data: { user: supabaseUser }, error: userError } = await client.auth.getUser();
         
         if (userError && userError.message !== 'Invalid JWT') {
@@ -89,6 +152,8 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
             if (event === 'SIGNED_OUT') {
               // Handle logout cleanup
               setUser(null);
+              setJwtToken(null);
+              setIsJWTBridgeActive(false);
             }
           }
         );
@@ -125,6 +190,8 @@ export function SupabaseProvider({ children }: SupabaseProviderProps) {
     user,
     isLoading,
     error,
+    jwtToken,
+    isJWTBridgeActive,
   };
 
   // Error boundary for Supabase initialization

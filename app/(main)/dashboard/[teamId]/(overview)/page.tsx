@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import { RecentSales } from "@/app/dashboard/[teamId]/(overview)/recent-sales";
+import { RecentSales } from "@/app/(main)/dashboard/[teamId]/(overview)/recent-sales";
 import {
   Card,
   CardContent,

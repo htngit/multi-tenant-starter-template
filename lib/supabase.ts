@@ -15,6 +15,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { createBrowserClient, createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
+import { extractStackAuthJWT, validateStackAuthJWT, createSupabaseCompatibleJWT, StackAuthJWTClaims } from './jwt-utils'
 
 // Conditional import for next/headers (only available in app directory)
 let cookies: any = null
@@ -435,27 +436,66 @@ export const createAdminClient = (userContext?: {
  * 
  * @param userContext - User context from Stack Auth
  * @param useServiceRole - Whether to use service role (admin operations)
+ * @param jwtToken - Optional JWT token from Stack Auth for direct injection
  */
-export const createAuthenticatedClient = (
+export const createAuthenticatedClient = async (
   userContext: {
     userId: string
     tenantId: string
     roles: string[]
     permissions: string[]
   },
-  useServiceRole = false
+  useServiceRole = false,
+  jwtToken?: string
 ) => {
   const client = useServiceRole 
     ? createAdminClient(userContext)
     : createClientComponentClient()
 
+  // JWT Token Bridge Implementation
+  if (!useServiceRole && jwtToken) {
+    try {
+      // Validate the Stack Auth JWT
+      const isValid = await validateStackAuthJWT(jwtToken)
+      
+      if (isValid) {
+        // Create Supabase-compatible JWT
+        const supabaseJWT = await createSupabaseCompatibleJWT(userContext, jwtToken)
+        
+        // Inject JWT into Supabase client headers
+        const supabaseClient = client as any
+        supabaseClient.rest.headers = {
+          ...supabaseClient.rest.headers,
+          'Authorization': `Bearer ${supabaseJWT}`,
+          'X-Stack-Auth-Token': jwtToken,
+          'X-User-ID': userContext.userId,
+          'X-Tenant-ID': userContext.tenantId,
+          'X-User-Roles': userContext.roles.join(','),
+          'X-User-Permissions': userContext.permissions.join(',')
+        }
+        
+        console.debug('JWT token bridge activated for Supabase client')
+      } else {
+        console.warn('Invalid Stack Auth JWT token, falling back to standard authentication')
+      }
+    } catch (error) {
+      console.error('JWT token bridge error:', error)
+      // Graceful fallback - continue with standard authentication
+    }
+  }
+
   // Add RLS context for tenant isolation
   if (!useServiceRole) {
-    // Set RLS context for multi-tenancy
-    client.rpc('set_tenant_context', {
-      tenant_id: userContext.tenantId,
-      user_id: userContext.userId,
-    })
+    try {
+      // Set RLS context for multi-tenancy
+      await client.rpc('set_tenant_context', {
+        tenant_id: userContext.tenantId,
+        user_id: userContext.userId,
+      })
+    } catch (error) {
+      console.warn('Failed to set tenant context:', error)
+      // Continue without RLS context - will rely on JWT claims
+    }
   }
 
   return client

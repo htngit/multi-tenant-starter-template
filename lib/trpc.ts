@@ -28,6 +28,7 @@ import {
   createAuthenticatedClient,
   type SupabaseClient 
 } from './supabase'
+import { extractStackAuthJWT, validateStackAuthJWT } from './jwt-utils'
 
 /**
  * Context type for tRPC procedures
@@ -42,17 +43,52 @@ export interface Context {
 /**
  * Create context for tRPC procedures
  * This runs for every tRPC request and provides authentication context
+ * Enhanced with JWT Token Bridge for Stack Auth to Supabase integration
  */
 export async function createTRPCContext(opts: CreateNextContextOptions): Promise<Context> {
   const { req, res } = opts
 
+  // Extract JWT token from request headers
+  let jwtToken: string | undefined
+  try {
+    const extractedToken = await extractStackAuthJWT(req)
+    jwtToken = extractedToken || undefined
+    console.debug('JWT token extracted from request:', !!jwtToken)
+  } catch (error) {
+    console.warn('Failed to extract JWT token:', error)
+  }
+
   // Get user context from Stack Auth
   const { userContext } = await validateAuthAndGetContext()
 
-  // Create Supabase client with user context if available
-  const supabase = userContext 
-    ? createAuthenticatedClient(userContext)
-    : createServerComponentClient()
+  // Create Supabase client with user context and JWT token if available
+  let supabase: SupabaseClient
+  
+  if (userContext && jwtToken) {
+    try {
+      // Validate JWT token before using it
+      const isValidJWT = await validateStackAuthJWT(jwtToken)
+      
+      if (isValidJWT) {
+        // Create authenticated client with JWT token bridge
+        supabase = await createAuthenticatedClient(userContext, false, jwtToken)
+        console.debug('Supabase client created with JWT token bridge')
+      } else {
+        console.warn('Invalid JWT token, falling back to standard authentication')
+        supabase = await createAuthenticatedClient(userContext)
+      }
+    } catch (error) {
+      console.error('JWT token bridge error in tRPC context:', error)
+      // Graceful fallback to standard authentication
+      supabase = await createAuthenticatedClient(userContext)
+    }
+  } else if (userContext) {
+    // Standard authentication without JWT token
+    supabase = await createAuthenticatedClient(userContext)
+  } else {
+    // No authentication - use server component client
+    supabase = createServerComponentClient()
+  }
 
   return {
     user: userContext,
