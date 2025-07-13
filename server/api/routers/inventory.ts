@@ -86,16 +86,18 @@ export const inventoryRouter = createTRPCRouter({
    */
   getProducts: inventoryReadProcedure
     .input(z.object({
+      teamId: z.string().uuid('Invalid team ID'),
       page: z.number().int().min(1).default(1),
       limit: z.number().int().min(1).max(100).default(20),
       search: z.string().optional(),
       categoryId: z.string().uuid().optional(),
       isActive: z.boolean().optional(),
       lowStock: z.boolean().optional(),
+      stockStatus: z.enum(['all', 'low_stock', 'out_of_stock']).default('all'),
     }))
     .query(async ({ input, ctx }) => {
       try {
-        const { page, limit, search, categoryId, isActive, lowStock } = input
+        const { teamId, page, limit, search, categoryId, isActive, lowStock, stockStatus } = input
         const offset = (page - 1) * limit
 
         let query = ctx.supabase
@@ -104,8 +106,8 @@ export const inventoryRouter = createTRPCRouter({
             *,
             categories (id, name),
             stock_movements (id, type, quantity, created_at)
-          `)
-          .eq('tenant_id', ctx.user.tenantId)
+          `, { count: 'exact' })
+          .eq('tenant_id', teamId)
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1)
 
@@ -124,6 +126,13 @@ export const inventoryRouter = createTRPCRouter({
         
         if (lowStock) {
           query = query.lt('stock_quantity', 'min_stock_level')
+        }
+        
+        // Handle stockStatus filter
+        if (stockStatus === 'low_stock') {
+          query = query.lt('stock_quantity', 'min_stock_level')
+        } else if (stockStatus === 'out_of_stock') {
+          query = query.eq('stock_quantity', 0)
         }
 
         const { data: products, error, count } = await query
@@ -687,13 +696,16 @@ export const inventoryRouter = createTRPCRouter({
           const date = new Date(movement.created_at)
           const monthKey = date.toLocaleDateString('en-US', { month: 'short' })
           
-          const productId = movement.products.id
+          const product = Array.isArray(movement.products) ? movement.products[0] : movement.products
+          const productId = product?.id
+          if (!productId) return
+          
           const currentStock = productStocks.get(productId) || 0
           const newStock = Math.max(0, currentStock + (movement.quantity || 0))
           productStocks.set(productId, newStock)
           
           // Calculate value for this month
-          const productValue = newStock * (movement.products.unit_price || 0)
+          const productValue = newStock * (product?.unit_price || 0)
           const currentMonthValue = monthlyData.get(monthKey) || 0
           monthlyData.set(monthKey, currentMonthValue + productValue)
         })

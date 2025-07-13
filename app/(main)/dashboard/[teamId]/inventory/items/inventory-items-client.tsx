@@ -46,7 +46,7 @@ import { useRealtimeInventory } from '@/hooks/use-realtime-inventory';
 import { QuickAddProduct } from '@/components/inventory/quick-add-product';
 import { StockMovementDialog } from '@/components/inventory/stock-movement-dialog';
 import { StockMovementsTable } from '@/components/inventory/stock-movements-table';
-import { Graph } from '@/components/graph';
+import { Graph } from '../../(overview)/graph';
 import { toast } from 'sonner';
 import type { Database } from '@/lib/database.types';
 
@@ -86,6 +86,9 @@ export function InventoryItemsClient({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'low_stock' | 'out_of_stock'>('all');
   const [page, setPage] = useState(1);
+  const [stockMovementDialogOpen, setStockMovementDialogOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [stockMovementsTableOpen, setStockMovementsTableOpen] = useState(false);
   const pageSize = 10;
 
   // tRPC queries with optimistic updates
@@ -96,7 +99,7 @@ export function InventoryItemsClient({
     refetch
   } = api.inventory.getProducts.useQuery(
     {
-      teamId,
+      teamId: tenantId,
       search: searchTerm,
       stockStatus: filterStatus === 'all' ? 'all' : filterStatus,
       page,
@@ -247,7 +250,12 @@ export function InventoryItemsClient({
           
           <div className="flex items-center gap-2">
             <QuickAddProduct onSuccess={handleProductCreated} />
-            <StockMovementDialog onSuccess={handleStockMovementSuccess} />
+            <StockMovementDialog 
+              product={selectedProduct}
+              open={stockMovementDialogOpen}
+              onOpenChangeAction={setStockMovementDialogOpen}
+              onSuccess={handleStockMovementSuccess}
+            />
           </div>
         </div>
 
@@ -385,9 +393,23 @@ export function InventoryItemsClient({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedProduct(product);
+                                setStockMovementsTableOpen(true);
+                              }}
+                            >
                               <Eye className="mr-2 h-4 w-4" />
-                              View Details
+                              View Stock Movements
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedProduct(product);
+                                setStockMovementDialogOpen(true);
+                              }}
+                            >
+                              <Package className="mr-2 h-4 w-4" />
+                              Adjust Stock
                             </DropdownMenuItem>
                             <DropdownMenuItem>
                               <Edit className="mr-2 h-4 w-4" />
@@ -462,7 +484,11 @@ export function InventoryItemsClient({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <StockMovementsTable />
+        <StockMovementsTable 
+          product={selectedProduct}
+          open={stockMovementsTableOpen}
+          onOpenChangeAction={setStockMovementsTableOpen}
+        />
       </CardContent>
     </Card>
   </TabsContent>

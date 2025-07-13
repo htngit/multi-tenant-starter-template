@@ -13,11 +13,11 @@ interface GraphProps {
 
 export function Graph({ className }: GraphProps) {
   const params = useParams()
-  const teamId = params.teamId as string
+  const teamId = params?.teamId as string
 
   // Fetch real inventory data from backend
   const { data: inventoryData, isLoading, error } = api.inventory.getMonthlyInventoryValue.useQuery(
-    { teamId },
+    { months: 12 },
     {
       enabled: !!teamId,
       refetchInterval: 30000, // Refetch every 30 seconds for live data
