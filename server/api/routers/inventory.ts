@@ -629,4 +629,88 @@ export const inventoryRouter = createTRPCRouter({
         })
       }
     }),
+
+  /**
+   * Get monthly inventory value for dashboard charts
+   */
+  getMonthlyInventoryValue: inventoryReadProcedure
+    .input(z.object({
+      months: z.number().min(1).max(24).default(12),
+    }))
+    .query(async ({ input, ctx }) => {
+      try {
+        const { months } = input
+        const startDate = new Date()
+        startDate.setMonth(startDate.getMonth() - months)
+        
+        const { data: stockMovements, error } = await ctx.supabase
+          .from('stock_movements')
+          .select(`
+            created_at,
+            quantity,
+            type,
+            products!inner (
+              id,
+              name,
+              unit_price,
+              is_active
+            )
+          `)
+          .eq('tenant_id', ctx.user.tenantId)
+          .eq('products.is_active', true)
+          .gte('created_at', startDate.toISOString())
+          .order('created_at', { ascending: true })
+
+        if (error) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to fetch stock movements',
+            cause: error,
+          })
+        }
+
+        // Group by month and calculate total inventory value
+        const monthlyData = new Map<string, number>()
+        
+        // Initialize all months with 0
+        for (let i = months - 1; i >= 0; i--) {
+          const date = new Date()
+          date.setMonth(date.getMonth() - i)
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short' })
+          monthlyData.set(monthKey, 0)
+        }
+
+        // Calculate running stock and value for each month
+        const productStocks = new Map<string, number>()
+        
+        stockMovements?.forEach((movement) => {
+          const date = new Date(movement.created_at)
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short' })
+          
+          const productId = movement.products.id
+          const currentStock = productStocks.get(productId) || 0
+          const newStock = Math.max(0, currentStock + (movement.quantity || 0))
+          productStocks.set(productId, newStock)
+          
+          // Calculate value for this month
+          const productValue = newStock * (movement.products.unit_price || 0)
+          const currentMonthValue = monthlyData.get(monthKey) || 0
+          monthlyData.set(monthKey, currentMonthValue + productValue)
+        })
+
+        // Convert to array format for chart
+        const chartData = Array.from(monthlyData.entries()).map(([month, totalValue]) => ({
+          month,
+          totalValue: Math.round(totalValue * 100) / 100,
+        }))
+
+        return chartData
+      } catch (error) {
+        console.error('Get monthly inventory value error:', error)
+        throw error instanceof TRPCError ? error : new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch monthly inventory value',
+        })
+      }
+    }),
 })

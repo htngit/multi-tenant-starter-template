@@ -22,7 +22,10 @@ import {
   Eye,
   AlertTriangle,
   CheckCircle,
-  XCircle
+  XCircle,
+  Plus,
+  Package,
+  Activity
 } from 'lucide-react';
 import { 
   DropdownMenu,
@@ -30,8 +33,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { trpc } from '@/app/provider';
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { api } from '@/lib/api';
 import { useRealtimeInventory } from '@/hooks/use-realtime-inventory';
+import { QuickAddProduct } from '@/components/inventory/quick-add-product';
+import { StockMovementDialog } from '@/components/inventory/stock-movement-dialog';
+import { StockMovementsTable } from '@/components/inventory/stock-movements-table';
+import { Graph } from '@/components/graph';
+import { toast } from 'sonner';
 import type { Database } from '@/lib/database.types';
 
 type Product = Database['public']['Tables']['products']['Row'] & {
@@ -78,10 +94,11 @@ export function InventoryItemsClient({
     isLoading,
     error,
     refetch
-  } = trpc.inventory.getProducts.useQuery(
+  } = api.inventory.getProducts.useQuery(
     {
+      teamId,
       search: searchTerm,
-      lowStock: filterStatus === 'low_stock',
+      stockStatus: filterStatus === 'all' ? 'all' : filterStatus,
       page,
       limit: pageSize,
     },
@@ -112,25 +129,39 @@ export function InventoryItemsClient({
   });
 
   // Mutations for inventory operations
-  const updateProductMutation = trpc.inventory.updateProduct.useMutation({
+  const updateProductMutation = api.inventory.updateProduct.useMutation({
     onSuccess: () => {
+      toast.success('Product updated successfully!');
       refetch();
     },
     onError: (error) => {
-      console.error('Failed to update product:', error);
-      // Show toast notification
+      toast.error('Failed to update product', {
+        description: error.message,
+      });
     },
   });
 
-  const deleteProductMutation = trpc.inventory.deleteProduct.useMutation({
+  const deleteProductMutation = api.inventory.deleteProduct.useMutation({
     onSuccess: () => {
+      toast.success('Product deleted successfully!');
       refetch();
     },
     onError: (error) => {
-      console.error('Failed to delete product:', error);
-      // Show toast notification
+      toast.error('Failed to delete product', {
+        description: error.message,
+      });
     },
   });
+
+  // Handle successful product creation from QuickAddProduct
+  const handleProductCreated = () => {
+    refetch();
+  };
+
+  // Handle successful stock movement
+  const handleStockMovementSuccess = () => {
+    refetch();
+  };
 
   // Use real-time data if available, fallback to tRPC data
   const products = realtimeProducts.length > 0 ? realtimeProducts : productsData?.products || [];
@@ -183,62 +214,87 @@ export function InventoryItemsClient({
   }, [searchTerm, filterStatus]);
 
   return (
-    <Card>
-      <CardHeader>
+    <div className="space-y-6">
+      {/* Inventory Analytics Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Inventory Value Trends
+          </CardTitle>
+          <CardDescription>
+            Monthly inventory value trends based on real stock movements
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Graph />
+        </CardContent>
+      </Card>
+
+      {/* Main Inventory Management */}
+      <Tabs defaultValue="products" className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              Inventory Items
-              {connectionStatus === 'connected' && (
-                <Badge variant="outline" className="text-green-600 border-green-600">
-                  Live
-                </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Manage your product inventory, track stock levels, and monitor item performance.
-            </CardDescription>
-          </div>
-        </div>
-        
-        {/* Search and Filter Controls */}
-        <div className="flex items-center gap-4 mt-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+          <TabsList>
+            <TabsTrigger value="products" className="flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Products
+            </TabsTrigger>
+            <TabsTrigger value="movements" className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Stock Movements
+            </TabsTrigger>
+          </TabsList>
           
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                Filter
-                {filterStatus !== 'all' && (
-                  <Badge variant="secondary" className="ml-1">
-                    {filterStatus === 'low_stock' ? 'Low Stock' : 'Out of Stock'}
-                  </Badge>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => setFilterStatus('all')}>
-                All Items
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterStatus('low_stock')}>
-                Low Stock Items
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFilterStatus('out_of_stock')}>
-                Out of Stock Items
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <QuickAddProduct onSuccess={handleProductCreated} />
+            <StockMovementDialog onSuccess={handleStockMovementSuccess} />
+          </div>
         </div>
-      </CardHeader>
+
+        <TabsContent value="products" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    Inventory Items
+                    {connectionStatus === 'connected' && (
+                      <Badge variant="outline" className="text-green-600 border-green-600">
+                        Live
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    Manage your product inventory, track stock levels, and monitor item performance.
+                  </CardDescription>
+                </div>
+              </div>
+              
+              {/* Search and Filter Controls */}
+              <div className="flex items-center gap-4 mt-4">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search products..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                <Select value={filterStatus} onValueChange={(value: 'all' | 'low_stock' | 'out_of_stock') => setFilterStatus(value)}>
+                  <SelectTrigger className="w-[180px]">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Items</SelectItem>
+                    <SelectItem value="low_stock">Low Stock Items</SelectItem>
+                    <SelectItem value="out_of_stock">Out of Stock Items</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
       
       <CardContent>
         {isLoading && products.length === 0 ? (
@@ -392,5 +448,25 @@ export function InventoryItemsClient({
         )}
       </CardContent>
     </Card>
+  </TabsContent>
+
+  <TabsContent value="movements" className="space-y-6">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Activity className="h-5 w-5" />
+          Stock Movements
+        </CardTitle>
+        <CardDescription>
+          Track all stock movements and inventory changes in real-time.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <StockMovementsTable />
+      </CardContent>
+    </Card>
+  </TabsContent>
+</Tabs>
+</div>
   );
 }
