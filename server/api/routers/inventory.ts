@@ -579,9 +579,9 @@ export const inventoryRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       try {
         const { data: categories, error } = await ctx.supabase
-          .from('categories')
+          .from('product_categories')
           .select('*')
-          .eq('tenant_id', ctx.user.tenantId)
+          .eq('team_id', ctx.user.tenantId)
           .eq('is_active', true)
           .order('name')
 
@@ -611,10 +611,10 @@ export const inventoryRouter = createTRPCRouter({
     .mutation(async ({ input, ctx }) => {
       try {
         const { data: category, error } = await ctx.supabase
-          .from('categories')
+          .from('product_categories')
           .insert({
             ...input,
-            tenant_id: ctx.user.tenantId,
+            team_id: ctx.user.tenantId,
             created_by: ctx.user.userId,
             updated_by: ctx.user.userId,
           })
@@ -724,5 +724,225 @@ export const inventoryRouter = createTRPCRouter({
           message: 'Failed to fetch monthly inventory value',
         })
       }
+    }),
+
+  /**
+   * Get comprehensive stock list with warehouse-based inventory
+   */
+  getStockList: inventoryReadProcedure
+    .input(z.object({
+      page: z.number().int().min(1).default(1),
+      limit: z.number().int().min(1).max(100).default(20),
+      search: z.string().optional(),
+      warehouseId: z.string().optional(),
+      categoryId: z.string().optional(),
+      stockStatus: z.enum(['all', 'in_stock', 'low_stock', 'out_of_stock']).default('all'),
+      sortBy: z.enum(['name', 'sku', 'stock', 'value', 'updated']).default('name'),
+      sortOrder: z.enum(['asc', 'desc']).default('asc'),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { supabase, user } = ctx;
+      const { page, limit, search, warehouseId, categoryId, stockStatus, sortBy, sortOrder } = input;
+      
+      const offset = (page - 1) * limit;
+      
+      // Build the query
+      let query = supabase
+        .from('inventory')
+        .select(`
+          id,
+          product_id,
+          warehouse_id,
+          quantity,
+          reserved_quantity,
+          updated_at,
+          products!inner (
+            id,
+            name,
+            sku,
+            selling_price,
+            category_id,
+            min_stock_level,
+            max_stock_level,
+            is_active,
+            product_categories (
+              name
+            )
+          ),
+          warehouses!inner (
+            id,
+            name
+          )
+        `, { count: 'exact' })
+        .eq('team_id', user.tenantId)
+        .eq('products.is_active', true);
+      
+      // Apply filters
+      if (search) {
+        query = query.or(`products.name.ilike.%${search}%,products.sku.ilike.%${search}%`);
+      }
+      
+      if (warehouseId && warehouseId !== 'all') {
+        query = query.eq('warehouse_id', warehouseId);
+      }
+      
+      if (categoryId && categoryId !== 'all') {
+        query = query.eq('products.category_id', categoryId);
+      }
+      
+      // Apply stock status filter
+      if (stockStatus !== 'all') {
+        if (stockStatus === 'out_of_stock') {
+          query = query.eq('quantity', 0);
+        } else if (stockStatus === 'low_stock') {
+          query = query.gt('quantity', 0).filter('quantity', 'lte', 'products.min_stock_level');
+        } else if (stockStatus === 'in_stock') {
+          query = query.gt('quantity', 0).filter('quantity', 'gt', 'products.min_stock_level');
+        }
+      }
+      
+      // Apply sorting
+      const sortColumn = {
+        name: 'products.name',
+        sku: 'products.sku',
+        stock: 'quantity',
+        value: 'products.selling_price',
+        updated: 'updated_at'
+      }[sortBy];
+      
+      query = query.order(sortColumn, { ascending: sortOrder === 'asc' });
+      
+      // Apply pagination
+      query = query.range(offset, offset + limit - 1);
+      
+      const { data, error, count } = await query;
+      
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch stock list',
+          cause: error,
+        });
+      }
+      
+      // Process the data
+      const stockItems = data?.map((item: any) => {
+        const product = Array.isArray(item.products) ? item.products[0] : item.products;
+        const warehouse = Array.isArray(item.warehouses) ? item.warehouses[0] : item.warehouses;
+        const category = Array.isArray(product?.product_categories) ? product.product_categories[0] : product?.product_categories;
+        
+        const totalValue = item.quantity * (product?.selling_price || 0);
+        const status = item.quantity === 0 
+          ? 'out_of_stock' 
+          : item.quantity <= (product?.min_stock_level || 0)
+          ? 'low_stock'
+          : 'in_stock';
+        
+        return {
+          id: item.id,
+          productId: item.product_id,
+          productName: product?.name || '',
+          sku: product?.sku || '',
+          warehouseId: item.warehouse_id,
+          warehouseName: warehouse?.name || '',
+          categoryName: category?.name || '',
+          availableStock: item.quantity,
+          reservedStock: item.reserved_quantity,
+          minStockLevel: product?.min_stock_level || 0,
+          maxStockLevel: product?.max_stock_level || 0,
+          unitPrice: product?.selling_price || 0,
+          totalValue,
+          status,
+          updatedAt: item.updated_at,
+        };
+      }) || [];
+      
+      return {
+        items: stockItems,
+        pagination: {
+          page,
+          limit,
+          total: count || 0,
+          pages: Math.ceil((count || 0) / limit),
+        },
+      };
+    }),
+
+  /**
+   * Get stock list summary statistics
+   */
+  getStockListSummary: inventoryReadProcedure
+    .input(
+      z.object({
+        warehouseId: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { supabase, user } = ctx;
+      const { warehouseId } = input;
+      
+      // Build the query
+      let query = supabase
+        .from('inventory')
+        .select(`
+          quantity,
+          products!inner (
+            selling_price,
+            min_stock_level,
+            is_active
+          )
+        `)
+        .eq('team_id', user.tenantId)
+        .eq('products.is_active', true);
+      
+      if (warehouseId && warehouseId !== 'all') {
+        query = query.eq('warehouse_id', warehouseId);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch stock summary',
+          cause: error,
+        });
+      }
+      
+      // Calculate summary statistics
+      const summary = data?.reduce(
+        (acc, item: any) => {
+          const product = Array.isArray(item.products) ? item.products[0] : item.products;
+          const totalValue = item.quantity * (product?.selling_price || 0);
+          
+          acc.totalItems += 1;
+          acc.totalValue += totalValue;
+          
+          if (item.quantity === 0) {
+            acc.outOfStockItems += 1;
+          } else if (item.quantity <= (product?.min_stock_level || 0)) {
+            acc.lowStockItems += 1;
+          } else {
+            acc.inStockItems += 1;
+          }
+          
+          return acc;
+        },
+        {
+          totalItems: 0,
+          totalValue: 0,
+          lowStockItems: 0,
+          outOfStockItems: 0,
+          inStockItems: 0,
+        }
+      ) || {
+        totalItems: 0,
+        totalValue: 0,
+        lowStockItems: 0,
+        outOfStockItems: 0,
+        inStockItems: 0,
+      };
+      
+      return summary;
     }),
 })

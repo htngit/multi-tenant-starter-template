@@ -718,4 +718,35 @@ export const tenantRouter = createTRPCRouter({
         })
       }
     }),
+
+  /**
+   * Get warehouses for the tenant
+   */
+  getWarehouses: tenantReadProcedure
+    .query(async ({ ctx }) => {
+      try {
+        const { data: warehouses, error } = await ctx.supabase
+          .from('warehouses')
+          .select('*')
+          .eq('team_id', ctx.user.tenantId)
+          .eq('is_active', true)
+          .order('name')
+
+        if (error) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to fetch warehouses',
+            cause: error,
+          })
+        }
+
+        return warehouses || []
+      } catch (error) {
+        console.error('Get warehouses error:', error)
+        throw error instanceof TRPCError ? error : new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch warehouses',
+        })
+      }
+    }),
 })

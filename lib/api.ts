@@ -53,7 +53,7 @@ export const api = createTRPCNext<AppRouter>({
       links: [
         // Logger link for development
         loggerLink({
-          enabled: (opts) => env.NODE_ENV === 'development' ||
+          enabled: (opts) => process.env.NODE_ENV === 'development' ||
             (opts.direction === 'down' && opts.result instanceof Error),
         }),
 
@@ -112,9 +112,9 @@ export const api = createTRPCNext<AppRouter>({
             // Retry delay with exponential backoff
             retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
             // Refetch on window focus in production
-            refetchOnWindowFocus: env.NODE_ENV === 'production',
+            refetchOnWindowFocus: process.env.NODE_ENV === 'production',
             // Don't refetch on reconnect in development
-            refetchOnReconnect: env.NODE_ENV === 'production',
+            refetchOnReconnect: process.env.NODE_ENV === 'production',
           },
           mutations: {
             // Retry failed mutations once
@@ -142,7 +142,7 @@ export const vanillaApi = createTRPCProxyClient<AppRouter>({
   links: [
     loggerLink({
       enabled: (opts) =>
-        env.NODE_ENV === 'development' ||
+        process.env.NODE_ENV === 'development' ||
         (opts.direction === 'down' && opts.result instanceof Error),
     }),
     httpBatchLink({
@@ -240,7 +240,7 @@ export function useApiErrorHandler() {
       const apiError = transformTRPCError(error)
       
       // Log error in development
-      if (env.NODE_ENV === 'development') {
+      if (process.env.NODE_ENV === 'development') {
         console.error('API Error:', apiError)
       }
       

@@ -191,44 +191,101 @@ export const env = createEnv({
 /**
  * Environment-specific configurations
  */
-export const isDevelopment = env.NODE_ENV === 'development'
-export const isProduction = env.NODE_ENV === 'production'
-export const isTest = env.NODE_ENV === 'test'
+export const isDevelopment = process.env.NODE_ENV === 'development'
+export const isProduction = process.env.NODE_ENV === 'production'
+export const isTest = process.env.NODE_ENV === 'test'
 
 /**
  * Feature flags helper
+ * Server-side feature flags should only be accessed on the server
  */
 export const features = {
-  advancedAnalytics: env.FEATURE_ADVANCED_ANALYTICS,
-  multiCurrency: env.FEATURE_MULTI_CURRENCY,
-  auditLogs: env.FEATURE_AUDIT_LOGS,
+  // Server-side feature flags - only access these on the server
+  get advancedAnalytics() {
+    if (typeof window !== 'undefined') {
+      throw new Error('Server-side feature flag accessed on client')
+    }
+    return env.FEATURE_ADVANCED_ANALYTICS
+  },
+  get multiCurrency() {
+    if (typeof window !== 'undefined') {
+      throw new Error('Server-side feature flag accessed on client')
+    }
+    return env.FEATURE_MULTI_CURRENCY
+  },
+  get auditLogs() {
+    if (typeof window !== 'undefined') {
+      throw new Error('Server-side feature flag accessed on client')
+    }
+    return env.FEATURE_AUDIT_LOGS
+  },
+  get rateLimiting() {
+    if (typeof window !== 'undefined') {
+      throw new Error('Server-side feature flag accessed on client')
+    }
+    return env.RATE_LIMIT_ENABLED
+  },
+  // Client-side feature flags - safe to access anywhere
   demoMode: env.NEXT_PUBLIC_FEATURE_DEMO_MODE,
   maintenanceMode: env.NEXT_PUBLIC_FEATURE_MAINTENANCE_MODE,
-  rateLimiting: env.RATE_LIMIT_ENABLED,
 }
 
 /**
  * Database configuration helper
+ * Server-side database configs should only be accessed on the server
  */
 export const database = {
-  url: env.DATABASE_URL || env.SUPABASE_URL,
+  get url() {
+    if (typeof window !== 'undefined') {
+      throw new Error('Server-side database URL accessed on client')
+    }
+    return env.DATABASE_URL || env.SUPABASE_URL
+  },
   supabase: {
-    url: env.SUPABASE_URL,
-    anonKey: env.SUPABASE_ANON_KEY,
-    serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
-    projectId: env.SUPABASE_PROJECT_ID,
+    // Client-safe Supabase config (uses NEXT_PUBLIC_ variables)
+    url: env.NEXT_PUBLIC_SUPABASE_URL,
+    anonKey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    get serviceRoleKey() {
+      if (typeof window !== 'undefined') {
+        throw new Error('Server-side service role key accessed on client')
+      }
+      return env.SUPABASE_SERVICE_ROLE_KEY
+    },
+    get projectId() {
+      if (typeof window !== 'undefined') {
+        throw new Error('Server-side project ID accessed on client')
+      }
+      return env.SUPABASE_PROJECT_ID
+    },
   },
 }
 
 /**
  * Authentication configuration helper
+ * Server-side auth configs should only be accessed on the server
  */
 export const auth = {
   stackAuth: {
-    projectId: env.STACK_PROJECT_ID,
+    get projectId() {
+      if (typeof window !== 'undefined') {
+        throw new Error('Server-side Stack Auth project ID accessed on client')
+      }
+      return env.STACK_PROJECT_ID
+    },
+    // Client-safe publishable key
     publishableKey: env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY,
-    secretKey: env.STACK_SECRET_SERVER_KEY,
-    jwksUrl: env.STACK_JWKS_URL,
+    get secretKey() {
+      if (typeof window !== 'undefined') {
+        throw new Error('Server-side Stack Auth secret key accessed on client')
+      }
+      return env.STACK_SECRET_SERVER_KEY
+    },
+    get jwksUrl() {
+      if (typeof window !== 'undefined') {
+        throw new Error('Server-side Stack Auth JWKS URL accessed on client')
+      }
+      return env.STACK_JWKS_URL
+    },
   },
 }
 
@@ -246,9 +303,15 @@ export const app = {
 
 /**
  * Logging configuration helper
+ * Server-side logging configs should only be accessed on the server
  */
 export const logging = {
-  level: env.LOG_LEVEL,
+  get level() {
+    if (typeof window !== 'undefined') {
+      throw new Error('Server-side log level accessed on client')
+    }
+    return env.LOG_LEVEL
+  },
   isDevelopment,
 }
 
